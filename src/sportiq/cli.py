@@ -20,6 +20,10 @@ from sportiq import __version__
 from sportiq.dataset.annotation_parser import load_sequence
 from sportiq.dataset.annotation_validator import AnnotationValidator
 from sportiq.dataset.class_mapping import ClassTaxonomyType
+from sportiq.dataset.dataset_materializer import (
+    AlignmentVerificationError,
+    DatasetMaterializer,
+)
 from sportiq.dataset.dataset_splitter import DatasetSplitter
 from sportiq.dataset.statistics import DatasetStatisticsReporter
 from sportiq.dataset.visualizer import visualize_sequence_frame
@@ -228,14 +232,23 @@ def split_dataset_command(args: argparse.Namespace) -> int:
         # Collect sequences
         seq_names: List[str] = []
         match_grouping: Dict[str, str] = {}
+        missing_match_metadata: List[str] = []
 
         if (root_dir / "seqinfo.ini").exists():
             seq_names = [root_dir.name]
             gameinfo_path = root_dir / "gameinfo.ini"
             if gameinfo_path.exists():
-                seq_obj = load_sequence(root_dir)
-                if seq_obj.game_info and seq_obj.game_info.game_id:
-                    match_grouping[root_dir.name] = seq_obj.game_info.game_id
+                try:
+                    seq_obj = load_sequence(root_dir)
+                    if seq_obj.game_info and seq_obj.game_info.game_id:
+                        match_grouping[root_dir.name] = seq_obj.game_info.game_id
+                    else:
+                        missing_match_metadata.append(root_dir.name)
+                except Exception as e:
+                    logger.warning("Failed to parse gameinfo.ini for %s: %s", root_dir.name, e)
+                    missing_match_metadata.append(root_dir.name)
+            else:
+                missing_match_metadata.append(root_dir.name)
         elif root_dir.is_dir():
             for child in sorted(root_dir.iterdir()):
                 if child.is_dir() and (child / "seqinfo.ini").exists():
@@ -246,12 +259,36 @@ def split_dataset_command(args: argparse.Namespace) -> int:
                             seq_obj = load_sequence(child)
                             if seq_obj.game_info and seq_obj.game_info.game_id:
                                 match_grouping[child.name] = seq_obj.game_info.game_id
-                        except Exception:
-                            pass
+                            else:
+                                missing_match_metadata.append(child.name)
+                        except Exception as e:
+                            logger.warning("Failed to parse gameinfo.ini for %s: %s", child.name, e)
+                            missing_match_metadata.append(child.name)
+                    else:
+                        missing_match_metadata.append(child.name)
 
         if not seq_names:
             print(f"Error: No valid sequences found in {root_dir}", file=sys.stderr)
             return 1
+
+        allow_missing = getattr(args, "allow_missing_game_id", False)
+        # If some sequences have match metadata but others are missing it:
+        if match_grouping and missing_match_metadata:
+            msg = (
+                f"Incomplete match metadata: {len(missing_match_metadata)} sequence(s) missing game_id: {missing_match_metadata}."
+            )
+            if not allow_missing:
+                print(
+                    f"Error: {msg} Pass --allow-missing-game-id to explicitly downgrade to sequence-level splitting.",
+                    file=sys.stderr,
+                )
+                return 1
+            else:
+                print(
+                    f"Warning: {msg} Explicitly downgrading to sequence-level splitting.",
+                    file=sys.stderr,
+                )
+                match_grouping = {}
 
         splitter = DatasetSplitter(random_seed=args.seed)
         split_result = splitter.split_sequences(
@@ -260,6 +297,7 @@ def split_dataset_command(args: argparse.Namespace) -> int:
             val_ratio=args.val_ratio,
             test_ratio=args.test_ratio,
             match_grouping=match_grouping if match_grouping else None,
+            strict_match_grouping=not allow_missing,
         )
 
         yaml_content = None
@@ -295,6 +333,122 @@ def split_dataset_command(args: argparse.Namespace) -> int:
         return 1
     except Exception as e:
         logger.exception("Unexpected error during dataset splitting: %s", e)
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def materialize_dataset_command(args: argparse.Namespace) -> int:
+    """Materialize train/val/test splits preserving 1:1 image-to-label correspondence."""
+    sequences_dir = Path(args.sequences_dir).resolve()
+    labels_dir = Path(args.labels_dir).resolve()
+    output_dir = Path(args.output_dir).resolve()
+
+    try:
+        seq_dict = {}
+        if (sequences_dir / "seqinfo.ini").exists():
+            seq_dict[sequences_dir.name] = load_sequence(sequences_dir)
+        elif sequences_dir.is_dir():
+            for child in sorted(sequences_dir.iterdir()):
+                if child.is_dir() and (child / "seqinfo.ini").exists():
+                    try:
+                        seq_dict[child.name] = load_sequence(child)
+                    except Exception as e:
+                        logger.warning("Could not load sequence %s: %s", child.name, e)
+
+        if not seq_dict:
+            print(f"Error: No valid sequences found in {sequences_dir}", file=sys.stderr)
+            return 1
+
+        seq_names = list(seq_dict.keys())
+        match_grouping = {
+            s.name: s.game_info.game_id
+            for s in seq_dict.values()
+            if s.game_info and s.game_info.game_id
+        }
+        allow_missing = getattr(args, "allow_missing_game_id", False)
+
+        splitter = DatasetSplitter(random_seed=args.seed)
+        split = splitter.split_sequences(
+            sequence_names=seq_names,
+            train_ratio=args.train_ratio,
+            val_ratio=args.val_ratio,
+            test_ratio=args.test_ratio,
+            match_grouping=match_grouping if len(match_grouping) == len(seq_names) else None,
+            strict_match_grouping=not allow_missing,
+        )
+
+        taxonomy = ClassTaxonomyType(args.taxonomy)
+        summary = DatasetMaterializer.materialize(
+            split=split,
+            sequences=seq_dict,
+            labels_base_dir=labels_dir,
+            output_dir=output_dir,
+            mode=args.mode,
+            taxonomy=taxonomy,
+        )
+
+        if getattr(args, "json", False):
+            print(json.dumps(summary, indent=2))
+        else:
+            print("=" * 60)
+            print("SportIQ YOLO Dataset Materialization Complete")
+            print("=" * 60)
+            print(f"Output Directory:       {summary['output_directory']}")
+            print(f"Dataset YAML:           {summary['dataset_yaml']}")
+            print(f"Materialization Mode:   {summary['mode']}")
+            print(f"Total Paired Images:    {summary['total_images']}")
+            print(f"Labeled Frames:         {summary['total_labeled_frames']}")
+            print(f"Background Frames:      {summary['total_background_frames']}")
+            print(f"Split Counts:           {summary['split_counts']}")
+            print("=" * 60)
+        return 0
+
+    except (AlignmentVerificationError, ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        logger.exception("Unexpected error during dataset materialization: %s", e)
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def verify_dataset_command(args: argparse.Namespace) -> int:
+    """Audit and verify YOLO dataset image-to-label alignment from dataset.yaml."""
+    yaml_path = Path(args.dataset_yaml).resolve()
+
+    try:
+        report = DatasetMaterializer.verify_dataset_alignment(yaml_path)
+        report_dict = report.to_dict()
+
+        if getattr(args, "json", False):
+            print(json.dumps(report_dict, indent=2))
+        else:
+            print("=" * 60)
+            print("SportIQ YOLO Dataset Alignment Audit")
+            print("=" * 60)
+            print(f"Dataset YAML:           {report.dataset_yaml}")
+            print(f"Alignment Status:       {'ALIGNED' if report.is_aligned else 'BROKEN'}")
+            print(f"Total Images:           {report.total_images}")
+            print(f"Total Labels:           {report.total_labels}")
+            print(f"Labeled Frames:         {report.labeled_frames}")
+            print(f"Background Frames:      {report.background_frames}")
+            print(f"Split Counts:           {report.split_counts}")
+            if report.missing_images:
+                print(f"Missing Images ({len(report.missing_images)}):")
+                for m in report.missing_images[:5]:
+                    print(f"  - {m}")
+            if report.corrupted_labels:
+                print(f"Corrupted Labels ({len(report.corrupted_labels)}):")
+                for c in report.corrupted_labels[:5]:
+                    print(f"  - {c}")
+            print("=" * 60)
+        return 0 if report.is_aligned else 1
+
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        logger.exception("Unexpected error during dataset verification: %s", e)
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
@@ -555,6 +709,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Random seed for reproducibility (default: 42)",
     )
     split_parser.add_argument(
+        "--allow-missing-game-id",
+        action="store_true",
+        help="Explicitly permit downgrade to sequence-level splitting if game_id is missing",
+    )
+    split_parser.add_argument(
         "--output-yaml",
         type=str,
         default=None,
@@ -573,6 +732,95 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output split results in JSON format",
     )
     split_parser.set_defaults(func=split_dataset_command)
+
+    # Command: materialize-dataset
+    materialize_parser = subparsers.add_parser(
+        "materialize-dataset",
+        help="Materialize YOLO train/val/test splits preserving 1:1 image-to-label alignment",
+    )
+    materialize_parser.add_argument(
+        "sequences_dir",
+        type=str,
+        help="Directory containing one or more sequence folders",
+    )
+    materialize_parser.add_argument(
+        "--labels-dir",
+        type=str,
+        required=True,
+        help="Base directory containing exported YOLO labels per sequence",
+    )
+    materialize_parser.add_argument(
+        "--output-dir",
+        type=str,
+        required=True,
+        help="Destination directory for materialized dataset and dataset.yaml",
+    )
+    materialize_parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["manifest", "symlink", "hardlink", "copy"],
+        default="manifest",
+        help="Materialization mode (default: manifest, zero disk duplication)",
+    )
+    materialize_parser.add_argument(
+        "--train-ratio",
+        type=float,
+        default=0.70,
+        help="Fraction for training split (default: 0.70)",
+    )
+    materialize_parser.add_argument(
+        "--val-ratio",
+        type=float,
+        default=0.15,
+        help="Fraction for validation split (default: 0.15)",
+    )
+    materialize_parser.add_argument(
+        "--test-ratio",
+        type=float,
+        default=0.15,
+        help="Fraction for testing split (default: 0.15)",
+    )
+    materialize_parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42)",
+    )
+    materialize_parser.add_argument(
+        "--allow-missing-game-id",
+        action="store_true",
+        help="Permit downgrade to sequence-level partition if match metadata is incomplete",
+    )
+    materialize_parser.add_argument(
+        "--taxonomy",
+        type=str,
+        choices=["four_class", "five_class", "two_class"],
+        default="four_class",
+        help="Taxonomy for dataset.yaml class names (default: four_class)",
+    )
+    materialize_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output summary in JSON format",
+    )
+    materialize_parser.set_defaults(func=materialize_dataset_command)
+
+    # Command: verify-dataset
+    verify_parser = subparsers.add_parser(
+        "verify-dataset",
+        help="Verify 1:1 image-label correspondence and bounds checking from dataset.yaml",
+    )
+    verify_parser.add_argument(
+        "dataset_yaml",
+        type=str,
+        help="Path to YOLO dataset.yaml file to audit",
+    )
+    verify_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output audit report in JSON format",
+    )
+    verify_parser.set_defaults(func=verify_dataset_command)
 
     # Command: dataset-stats
     stats_parser = subparsers.add_parser(

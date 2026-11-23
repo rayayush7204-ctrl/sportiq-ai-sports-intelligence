@@ -23,6 +23,57 @@ def test_validate_annotation_valid() -> None:
     assert sanitized == (100.0, 200.0, 50.0, 100.0)
 
 
+def test_validate_annotation_non_finite_coordinates() -> None:
+    """Test rejection of NaN and positive/negative infinity coordinates."""
+    val = AnnotationValidator(clip_boxes=True)
+
+    # NaN left
+    ann_nan_x = MOTAnnotation(1, 1, float("nan"), 100.0, 50.0, 100.0, 1.0)
+    is_valid, _, status = val.validate_annotation(ann_nan_x, 1920, 1080)
+    assert is_valid is False
+    assert status == "non_finite_coordinates"
+
+    # NaN top
+    ann_nan_y = MOTAnnotation(1, 1, 100.0, float("nan"), 50.0, 100.0, 1.0)
+    is_valid, _, status = val.validate_annotation(ann_nan_y, 1920, 1080)
+    assert is_valid is False
+    assert status == "non_finite_coordinates"
+
+    # +Inf coordinate
+    ann_inf_x = MOTAnnotation(1, 1, float("inf"), 100.0, 50.0, 100.0, 1.0)
+    is_valid, _, status = val.validate_annotation(ann_inf_x, 1920, 1080)
+    assert is_valid is False
+    assert status == "non_finite_coordinates"
+
+    # -Inf coordinate
+    ann_neginf_y = MOTAnnotation(1, 1, 100.0, float("-inf"), 50.0, 100.0, 1.0)
+    is_valid, _, status = val.validate_annotation(ann_neginf_y, 1920, 1080)
+    assert is_valid is False
+    assert status == "non_finite_coordinates"
+
+    # NaN width and height
+    ann_nan_w = MOTAnnotation(1, 1, 100.0, 100.0, float("nan"), 50.0, 1.0)
+    is_valid, _, status = val.validate_annotation(ann_nan_w, 1920, 1080)
+    assert is_valid is False
+    assert status == "non_finite_coordinates"
+
+    ann_nan_h = MOTAnnotation(1, 1, 100.0, 100.0, 50.0, float("nan"), 1.0)
+    is_valid, _, status = val.validate_annotation(ann_nan_h, 1920, 1080)
+    assert is_valid is False
+    assert status == "non_finite_coordinates"
+
+    # +Inf width and height
+    ann_inf_w = MOTAnnotation(1, 1, 100.0, 100.0, float("inf"), 50.0, 1.0)
+    is_valid, _, status = val.validate_annotation(ann_inf_w, 1920, 1080)
+    assert is_valid is False
+    assert status == "non_finite_coordinates"
+
+    ann_inf_h = MOTAnnotation(1, 1, 100.0, 100.0, 50.0, float("inf"), 1.0)
+    is_valid, _, status = val.validate_annotation(ann_inf_h, 1920, 1080)
+    assert is_valid is False
+    assert status == "non_finite_coordinates"
+
+
 def test_validate_annotation_non_positive_dims() -> None:
     """Test rejection of non-positive widths or heights."""
     val = AnnotationValidator(clip_boxes=True)
@@ -84,19 +135,21 @@ def test_filter_and_validate_aggregation() -> None:
     """Test batch filtering and validation metrics compilation."""
     val = AnnotationValidator(clip_boxes=True)
     anns = [
-        MOTAnnotation(1, 1, 10.0, 10.0, 50.0, 50.0, 1.0),     # Valid
-        MOTAnnotation(1, 2, -10.0, 10.0, 50.0, 50.0, 1.0),    # Clipped
-        MOTAnnotation(1, 3, 3000.0, 10.0, 50.0, 50.0, 1.0),   # Out of bounds
-        MOTAnnotation(1, 4, 10.0, 10.0, -5.0, 50.0, 1.0),     # Non-positive dim
+        MOTAnnotation(1, 1, 10.0, 10.0, 50.0, 50.0, 1.0),         # Valid
+        MOTAnnotation(1, 2, -10.0, 10.0, 50.0, 50.0, 1.0),        # Clipped
+        MOTAnnotation(1, 3, 3000.0, 10.0, 50.0, 50.0, 1.0),       # Out of bounds
+        MOTAnnotation(1, 4, 10.0, 10.0, -5.0, 50.0, 1.0),         # Non-positive dim
+        MOTAnnotation(1, 5, float("nan"), 10.0, 50.0, 50.0, 1.0), # Non-finite
     ]
 
     valid_pairs, result = val.filter_and_validate(anns, image_width=1920, image_height=1080)
 
     assert len(valid_pairs) == 2
     assert isinstance(result, ValidationResult)
-    assert result.total_inspected == 4
+    assert result.total_inspected == 5
     assert result.valid_count == 2
     assert result.clipped_count == 1
     assert result.dropped_out_of_bounds == 1
     assert result.dropped_non_positive_dims == 1
-    assert result.to_dict()["pass_rate_pct"] == 50.0
+    assert result.dropped_non_finite == 1
+    assert result.to_dict()["pass_rate_pct"] == 40.0

@@ -20,6 +20,11 @@ from sportiq.dataset.class_mapping import (
     ClassTaxonomyType,
     resolve_class,
 )
+from sportiq.dataset.dataset_materializer import (
+    AlignmentReport,
+    AlignmentVerificationError,
+    DatasetMaterializer,
+)
 from sportiq.dataset.dataset_splitter import DatasetSplit, DatasetSplitter
 from sportiq.dataset.downloader import SoccerNetDownloaderHelper
 from sportiq.dataset.statistics import DatasetStatistics, DatasetStatisticsReporter
@@ -44,6 +49,9 @@ __all__ = [
     "YOLOInstance",
     "DatasetSplitter",
     "DatasetSplit",
+    "DatasetMaterializer",
+    "AlignmentReport",
+    "AlignmentVerificationError",
     "DatasetStatisticsReporter",
     "DatasetStatistics",
     "SoccerNetDownloaderHelper",

@@ -220,8 +220,27 @@ def parse_gameinfo(gameinfo_path: Union[str, Path]) -> GameInfo:
 
     if "Sequence" in config:
         seq_sec = config["Sequence"]
-        game_id = seq_sec.get("game_id", seq_sec.get("gameId"))
-        action = seq_sec.get("action")
+        game_id = seq_sec.get("game_id", seq_sec.get("gameid", seq_sec.get("gameId")))
+        action = seq_sec.get("action", seq_sec.get("actionclass", seq_sec.get("actionClass")))
+
+        # SoccerNet official format: trackletID_<id>= <class>;<jersey_or_role>
+        for k, v in seq_sec.items():
+            k_lower = k.lower()
+            if k_lower.startswith("trackletid_") or k_lower.startswith("track_"):
+                prefix = "trackletid_" if k_lower.startswith("trackletid_") else "track_"
+                try:
+                    track_id = int(k_lower.split(prefix)[1])
+                    parts = [p.strip() for p in v.split(";")]
+                    cls_name = parts[0] if parts else v.strip()
+                    jersey_or_role = parts[1] if len(parts) > 1 else None
+                    track_classes[track_id] = cls_name
+                    track_metadata[track_id] = {
+                        "class": cls_name,
+                        "jersey_or_role": jersey_or_role,
+                        "raw": v,
+                    }
+                except ValueError:
+                    continue
 
     for sec_name in config.sections():
         # Match [Track_1], [Track_2], [track_1], etc.

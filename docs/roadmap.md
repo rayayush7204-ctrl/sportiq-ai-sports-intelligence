@@ -4,7 +4,7 @@
 |---|---|---|---|
 | **1** | **Environment, GPU verification, data/licence inventory** | Reproducible environment (Python 3.11, PyTorch 2.15+cu132, CUDA 13.2, RTX 3050 verified) | **COMPLETED** |
 | **2** | **Video inspection and frame extraction pipeline** | CLI commands (`inspect-video`, `extract-frames`, `check-env`), JSONL manifest, timestamp preservation, 20 passing unit/integration tests | **COMPLETED** |
-| **3** | **Dataset engineering & annotation pipeline** | SoccerNet MOT parser, 4-class taxonomy, coordinate validator, YOLO converter, match-level splitter, visualizer, 57 passing tests | **COMPLETED** |
+| **3** | **Dataset engineering & annotation pipeline** | SoccerNet MOT parser, 4-class taxonomy, coordinate validator, YOLO converter, match-level splitter, visualizer, 67 passing tests | **COMPLETED** |
 | **4** | **Pretrained player & ball detector baseline** | YOLOv8/11 person/ball detection baseline, annotated sample clip, and precision/recall evaluation | Pending |
 | **5** | **Multi-object tracking (ByteTrack)** | Persistent track IDs across frames, bounding box association, and ID retention metrics | Pending |
 | **6** | **BoT-SORT comparison and team clustering** | Comparison of ByteTrack vs BoT-SORT; jersey colour feature extraction and k-means clustering | Pending |
@@ -28,8 +28,9 @@
   - Experimental 5-class model: adds `4: staff`.
   - Baseline 2-class model: `0: person`, `1: ball`.
   - Strict preservation of raw class labels, canonical class names, and original track IDs in `labels_metadata.jsonl`.
-- **Annotation Validation & Sanitization**: Complete bounds checking ($0 \le x < W$, $0 \le y < H$), non-positive dimension rejection, and bounding-box edge clamping.
+- **Annotation Validation & Sanitization**: Complete bounds checking ($0 \le x < W$, $0 \le y < H$), finite-number validation (`math.isfinite()` rejecting NaN and +/-Inf), non-positive dimension rejection, and bounding-box edge clamping.
 - **YOLO Conversion & Sidecar Metadata**: Normalized YOLO detection labels (`<class_id> <x_center> <y_center> <w> <h>`) exported to frame `.txt` files with full tracking metadata sidecars.
-- **Deterministic Partitioning**: Zero frame-leakage splitting via Largest Remainder quota distribution at sequence and match levels, with YOLO `dataset.yaml` generation.
-- **Annotation Visualizer & CLI Tools**: Integrated CLI commands (`convert-dataset`, `split-dataset`, `dataset-stats`, `visualize-annotations`) and OpenCV color-coded bounding-box renderer.
-- **Automated Test Coverage**: 57 automated tests passing under `pytest` across video and dataset packages.
+- **Deterministic Partitioning & Strict Match Grouping**: Zero frame-leakage splitting via Largest Remainder quota distribution at sequence and match levels, with strict game_id completeness checks and YOLO `dataset.yaml` generation.
+- **Dataset Materialization & Alignment Verification**: `DatasetMaterializer` supporting zero-duplication manifest and directory layouts, with end-to-end 1:1 image-to-label alignment auditing.
+- **Annotation Visualizer & CLI Tools**: Integrated CLI commands (`convert-dataset`, `split-dataset`, `dataset-stats`, `visualize-annotations`, `materialize-dataset`, `verify-dataset`) and OpenCV color-coded bounding-box renderer.
+- **Automated Test Coverage**: 67 automated tests passing under `pytest` across video, dataset, materialization, and validation modules.

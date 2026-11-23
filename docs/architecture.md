@@ -138,6 +138,13 @@ Input Video File (.mp4, .mov, .avi)
   - Color-codes bounding boxes by canonical class (green for player, orange for goalkeeper, yellow for referee, cyan for ball, magenta for staff).
   - Renders labels with track IDs and class names onto OpenCV frames.
 
+#### 8. `sportiq.dataset.dataset_materializer`
+- **`DatasetMaterializer` / `verify_dataset_alignment`**:
+  - Materializes train/val/test splits preserving 1:1 image-to-label correspondence.
+  - Zero-duplication manifest mode generates `train.txt`, `val.txt`, `test.txt` containing resolved POSIX image paths, and standard `dataset.yaml`.
+  - Directory mode (`copy`, `symlink`, `hardlink`) materializes `images/<split>` and `labels/<split>`.
+  - Alignment audit validates existence of every image, 1:1 correspondence with label files, and verifies all bounding box coordinates are strictly normalized in $[0, 1]$.
+
 ---
 
 ### Phase 1 & 2 CLI (`sportiq.cli`)
@@ -146,9 +153,11 @@ Input Video File (.mp4, .mov, .avi)
   - `inspect-video`: extracts video stream metadata.
   - `extract-frames`: samples video frames with manifest.
   - `convert-dataset`: converts SoccerNet MOT sequences to YOLO `.txt` + `labels_metadata.jsonl`.
-  - `split-dataset`: partitions datasets deterministically and writes `dataset.yaml`.
+  - `split-dataset`: partitions datasets deterministically and writes `dataset.yaml` with strict match-level grouping.
   - `dataset-stats`: computes ground-truth statistics across sequences.
   - `visualize-annotations`: renders annotated frames with ground-truth boxes and track IDs.
+  - `materialize-dataset`: builds zero-duplication YOLO datasets with split manifests or physical layouts.
+  - `verify-dataset`: audits image-to-label alignment, missing frames, and coordinate validity.
 
 ## Engineering Rules
 

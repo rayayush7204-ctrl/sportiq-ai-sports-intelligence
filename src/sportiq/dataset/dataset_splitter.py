@@ -89,6 +89,7 @@ class DatasetSplitter:
         val_ratio: float = 0.15,
         test_ratio: float = 0.15,
         match_grouping: Optional[Dict[str, str]] = None,
+        strict_match_grouping: bool = True,
     ) -> DatasetSplit:
         """Split sequences into train, validation, and test sets.
 
@@ -99,12 +100,15 @@ class DatasetSplitter:
             test_ratio: Proportion for testing.
             match_grouping: Optional mapping from sequence_name to match_id/game_id.
                             If provided, all sequences from the same match are kept together.
+            strict_match_grouping: If True and match_grouping is provided, raises ValueError
+                                   when any sequence lacks a valid game_id.
+                                   If False, warns and downgrades to sequence-level splitting.
 
         Returns:
             DatasetSplit: Deterministic, non-overlapping partition.
 
         Raises:
-            ValueError: If ratios don't sum to 1.0 or sequence list is empty.
+            ValueError: If ratios don't sum to 1.0, sequence list is empty, or match metadata is incomplete.
         """
         if not sequence_names:
             raise ValueError("sequence_names list cannot be empty.")
@@ -119,11 +123,36 @@ class DatasetSplitter:
         unique_seqs = sorted(list(set(sequence_names)))
         rng = random.Random(self.random_seed)
 
-        if match_grouping:
+        # Validate match_grouping completeness if provided
+        active_match_grouping = match_grouping
+        if active_match_grouping is not None:
+            missing_matches = [
+                seq
+                for seq in unique_seqs
+                if not active_match_grouping.get(seq) or not str(active_match_grouping[seq]).strip()
+            ]
+            if missing_matches:
+                err_msg = (
+                    f"Incomplete match metadata: {len(missing_matches)} sequence(s) missing valid game_id: {missing_matches}."
+                )
+                if strict_match_grouping:
+                    raise ValueError(
+                        f"{err_msg} When match grouping is enabled, every sequence must have a valid game_id "
+                        "to guarantee zero match-level data leakage. Set strict_match_grouping=False to allow fallback."
+                    )
+                else:
+                    logger.warning(
+                        "%s Downgrading to sequence-level splitting for all %d sequences.",
+                        err_msg,
+                        len(unique_seqs),
+                    )
+                    active_match_grouping = None
+
+        if active_match_grouping:
             # Group sequences by match ID
             groups: Dict[str, List[str]] = {}
             for seq in unique_seqs:
-                gid = match_grouping.get(seq, seq)
+                gid = str(active_match_grouping[seq]).strip()
                 groups.setdefault(gid, []).append(seq)
 
             group_keys = sorted(list(groups.keys()))

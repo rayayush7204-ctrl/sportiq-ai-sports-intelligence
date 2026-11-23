@@ -57,7 +57,7 @@ Multi-Object Tracking (ByteTrack / BoT-SORT)
 | **Multi-Object Tracking** | ByteTrack, BoT-SORT | Planned (Phase 4) |
 | **Data & Scientific** | NumPy (2.4.6), Pandas (2.3.3), Scipy (1.17.1) | Installed |
 | **Machine Learning** | scikit-learn (1.9.1) | Installed |
-| **Testing** | pytest (9.2.0) | Active (57 passing tests) |
+| **Testing** | pytest (9.2.0) | Active (67 passing tests) |
 | **API & Serving** | FastAPI, Uvicorn | Planned (Phase 6) |
 
 ## Repository Layout
@@ -193,8 +193,24 @@ Draw ground-truth bounding boxes, track IDs, and color-coded classes onto sequen
 sportiq visualize-annotations data/raw/soccernet/SNMOT-060 --frame-id 1 --output data/processed/vis_frame_1.jpg
 ```
 
+#### Materialize YOLO Dataset Splits (Zero-Duplication Manifests or Directory Layout)
+Materialize verified train, validation, and test partitions with 1:1 image-to-label alignment:
+```powershell
+# Manifest mode: creates train.txt, val.txt, test.txt and dataset.yaml without duplicating large image files
+sportiq materialize-dataset data/raw/soccernet/ --labels-dir data/processed/yolo/labels --output-dir data/processed/yolo_dataset --mode manifest
+
+# Copy or symlink mode: creates images/train, labels/train, etc.
+sportiq materialize-dataset data/raw/soccernet/ --labels-dir data/processed/yolo/labels --output-dir data/processed/yolo_dataset --mode copy
+```
+
+#### Audit and Verify Dataset Alignment
+Verify every referenced image exists, corresponds to a valid label, and has valid normalized coordinates:
+```powershell
+sportiq verify-dataset data/processed/yolo_dataset/dataset.yaml
+```
+
 ### 5. Running Automated Tests
-Run the complete automated test suite (57 unit and integration tests):
+Run the complete automated test suite (67 unit and integration tests):
 ```powershell
 pytest -v
 ```
@@ -203,7 +219,7 @@ pytest -v
 
 - [x] **Day 1: Environment & GPU verification** (Python 3.11, PyTorch 2.15+cu132, RTX 3050)
 - [x] **Day 2: Video inspection and frame extraction** (`sportiq.video`, CLI, JSONL manifest, tests)
-- [x] **Day 3: Dataset engineering & MOT/YOLO pipeline** (`sportiq.dataset`, 4-class taxonomy, MOT20 parser, validator, deterministic splitter, visualizer, 57 tests)
+- [x] **Day 3: Dataset engineering & MOT/YOLO pipeline** (`sportiq.dataset`, 4-class taxonomy, MOT20 parser, validator, deterministic splitter, visualizer, 67 tests)
 - [ ] **Day 4: Pretrained player & ball detector baseline** (YOLOv8 / YOLO11 detection, evaluation metrics)
 - [ ] **Day 5: Multi-object tracking (ByteTrack)** (track association across frames, ID retention)
 - [ ] **Day 6: BoT-SORT comparison and team clustering** (jersey appearance features)

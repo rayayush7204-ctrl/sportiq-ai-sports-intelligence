@@ -87,6 +87,40 @@ def test_split_sequences_with_match_grouping() -> None:
     assert val_set == match_a_seqs or val_set == match_b_seqs
 
 
+def test_split_partially_missing_game_id_strict_raises() -> None:
+    """Test strict match-level splitting raises ValueError when any sequence lacks game_id."""
+    splitter = DatasetSplitter(random_seed=42)
+    seqs = ["SNMOT-01", "SNMOT-02", "SNMOT-03"]
+    # SNMOT-03 missing from grouping
+    incomplete_grouping = {"SNMOT-01": "MATCH-A", "SNMOT-02": "MATCH-A"}
+
+    with pytest.raises(ValueError, match="Incomplete match metadata"):
+        splitter.split_sequences(
+            sequence_names=seqs,
+            match_grouping=incomplete_grouping,
+            strict_match_grouping=True,
+        )
+
+
+def test_split_partially_missing_game_id_fallback() -> None:
+    """Test non-strict match-level splitting downgrades to sequence-level partition."""
+    splitter = DatasetSplitter(random_seed=42)
+    seqs = ["SNMOT-01", "SNMOT-02", "SNMOT-03"]
+    incomplete_grouping = {"SNMOT-01": "MATCH-A", "SNMOT-02": "MATCH-A"}
+
+    # With strict_match_grouping=False, it should warn and split at sequence level
+    split = splitter.split_sequences(
+        sequence_names=seqs,
+        train_ratio=1.0,
+        val_ratio=0.0,
+        test_ratio=0.0,
+        match_grouping=incomplete_grouping,
+        strict_match_grouping=False,
+    )
+
+    assert len(split.train_sequences) == 3
+
+
 def test_split_invalid_ratios() -> None:
     """Test error raised when split ratios do not sum to 1.0."""
     splitter = DatasetSplitter()

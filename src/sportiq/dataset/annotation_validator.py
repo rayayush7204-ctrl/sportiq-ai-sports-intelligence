@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -20,6 +21,7 @@ class ValidationResult:
     clipped_count: int = 0
     dropped_out_of_bounds: int = 0
     dropped_non_positive_dims: int = 0
+    dropped_non_finite: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -28,6 +30,7 @@ class ValidationResult:
             "clipped_count": self.clipped_count,
             "dropped_out_of_bounds": self.dropped_out_of_bounds,
             "dropped_non_positive_dims": self.dropped_non_positive_dims,
+            "dropped_non_finite": self.dropped_non_finite,
             "pass_rate_pct": (
                 round((self.valid_count / self.total_inspected) * 100, 2)
                 if self.total_inspected > 0
@@ -66,11 +69,20 @@ class AnnotationValidator:
               - sanitized_xywh: (bb_left, bb_top, bb_width, bb_height) or None if dropped.
               - status: "valid", "clipped", or reason for rejection.
         """
-        # 1. Non-positive dimensions check
+        # 1. Finite-number validation: reject NaN, +inf, -inf
+        if (
+            not math.isfinite(ann.bb_left)
+            or not math.isfinite(ann.bb_top)
+            or not math.isfinite(ann.bb_width)
+            or not math.isfinite(ann.bb_height)
+        ):
+            return False, None, "non_finite_coordinates"
+
+        # 2. Non-positive dimensions check
         if ann.bb_width <= 0 or ann.bb_height <= 0:
             return False, None, "non_positive_dimensions"
 
-        # 2. Check if box is entirely outside image canvas
+        # 3. Check if box is entirely outside image canvas
         x1 = ann.bb_left
         y1 = ann.bb_top
         x2 = x1 + ann.bb_width
@@ -79,7 +91,7 @@ class AnnotationValidator:
         if x2 <= 0 or y2 <= 0 or x1 >= image_width or y1 >= image_height:
             return False, None, "out_of_bounds"
 
-        # 3. Check for partial boundary overlap
+        # 4. Check for partial boundary overlap
         needs_clipping = (x1 < 0) or (y1 < 0) or (x2 > image_width) or (y2 > image_height)
 
         if needs_clipping:
@@ -126,7 +138,9 @@ class AnnotationValidator:
                 if status == "clipped":
                     result.clipped_count += 1
             else:
-                if status == "non_positive_dimensions":
+                if status == "non_finite_coordinates":
+                    result.dropped_non_finite += 1
+                elif status == "non_positive_dimensions":
                     result.dropped_non_positive_dims += 1
                 elif "out_of_bounds" in status or status == "clipped_to_zero":
                     result.dropped_out_of_bounds += 1

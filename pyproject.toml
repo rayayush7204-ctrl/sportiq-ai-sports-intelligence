@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sportiq"
+version = "0.1.0"
+description = "AI-powered football video intelligence platform"
+authors = [{ name = "Ayush Kumar Ray" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "ultralytics>=8.3,<9",
+    "opencv-python>=4.9,<5",
+    "numpy>=1.26,<3",
+    "pandas>=2.2,<3",
+    "scikit-learn>=1.5,<2",
+    "matplotlib>=3.8,<4",
+    "seaborn>=0.13,<1",
+    "tqdm>=4.66,<5",
+    "PyYAML>=6,<7",
+    "Pillow>=10,<12",
+]
+
+[project.scripts]
+sportiq = "sportiq.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

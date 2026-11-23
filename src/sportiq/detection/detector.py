@@ -242,10 +242,15 @@ class YOLODetector:
                 for line in resolved_manifest.read_text(encoding="utf-8").strip().splitlines():
                     if line.strip():
                         rec = json.loads(line.strip())
-                        # Key by frame filename and original index
-                        fname = rec.get("frame_filename") or rec.get("extracted_frame")
+                        # Recognize Phase 1 FrameMetadata schema: extracted_frame_filename
+                        fname = (
+                            rec.get("extracted_frame_filename")
+                            or rec.get("frame_filename")
+                            or rec.get("extracted_frame")
+                        )
                         if fname:
-                            manifest_records[Path(fname).name] = rec
+                            # Normalize manifest filename to basename to match image filename on disk
+                            manifest_records[Path(str(fname)).name] = rec
             except Exception as e:
                 logger.warning("Could not parse manifest at %s: %s", resolved_manifest, e)
 
@@ -268,10 +273,26 @@ class YOLODetector:
         results: List[FrameDetections] = []
         for img_p in image_files:
             rec = manifest_records.get(img_p.name, {})
-            frame_idx = rec.get("original_frame_index") or rec.get("frame_index")
-            ts_ms = rec.get("timestamp_ms")
 
-            # Fallback frame index from numeric filename if available
+            # Explicit None check to preserve 0-based frame index (including 0)
+            frame_idx = rec.get("original_frame_index")
+            if frame_idx is None:
+                frame_idx = rec.get("frame_index")
+            if frame_idx is not None:
+                try:
+                    frame_idx = int(frame_idx)
+                except (ValueError, TypeError):
+                    frame_idx = None
+
+            # Preserve timestamp_ms (including legitimate 0.0)
+            ts_ms = rec.get("timestamp_ms")
+            if ts_ms is not None:
+                try:
+                    ts_ms = float(ts_ms)
+                except (ValueError, TypeError):
+                    ts_ms = None
+
+            # Fallback frame index from numeric filename if missing from manifest
             if frame_idx is None:
                 stem = img_p.stem.replace("frame_", "")
                 if stem.isdigit():

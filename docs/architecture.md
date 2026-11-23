@@ -170,7 +170,7 @@ Input Video File (.mp4, .mov, .avi)
   - FP16 half-precision execution enabled on CUDA GPU 0.
   - Exposes `class_names` mapping directly from model.
   - `predict_image()`: Processes single image or numpy BGR array.
-  - `predict_frames()`: Processes frame directories, automatically resolving `frames.jsonl` manifests to preserve original timestamps and frame indices.
+  - `predict_frames()`: Processes frame directories, automatically resolving `frames.jsonl` manifests according to the Phase 1 `FrameMetadata` schema (`extracted_frame_filename`, 0-based `original_frame_index`, and `timestamp_ms`) to preserve exact source timestamps and frame indices in structured JSONL predictions.
 
 #### 4. `sportiq.detection.visualizer`
 - **`DetectionVisualizer`**: Renders detected bounding boxes, confidence tags, and class badges onto frames with category color coding and summary overlay. Exports annotated frames to disk.
@@ -193,7 +193,7 @@ Input Video File (.mp4, .mov, .avi)
 ## Engineering Rules
 
 1. **Modular Independence**: Detection, tracking, analytics, and visualization reside in strictly decoupled modules.
-2. **Timestamp Preservation**: Original frame indices and millisecond timestamps are immutably captured at frame ingestion; sampled indices are never confused with source frame numbers.
+2. **Timestamp Preservation**: Original frame indices and millisecond timestamps are immutably captured at frame ingestion; sampled indices are never confused with source frame numbers. Frame manifest metadata (`extracted_frame_filename`, `original_frame_index`, `timestamp_ms`) is tested and preserved through detection predictions.
 3. **Raw Output Persistence**: Ingestion manifests (`frames.jsonl`) and raw model predictions must be persisted before deriving higher-order statistics (possession, heatmaps).
 4. **Explicit Uncertainty**: Uncertain ball detections and possession intervals must be flagged rather than silently interpolated.
-5. **Hardware Constraints**: The target development machine features an NVIDIA GeForce RTX 3050 Laptop GPU with 4 GB VRAM. Model inference must use FP16 half precision (`half=True`) and compact architectures (`yolov8s` or `yolo11s`) to avoid Out of Memory (OOM) faults.
+5. **Hardware Constraints**: The target development machine features an NVIDIA GeForce RTX 3050 Laptop GPU with 4 GB VRAM. Model inference must use FP16 half precision (`half=True`) and lightweight compact architectures (`yolo11n` baseline, ~2.6M parameters) to strictly avoid Out of Memory (OOM) faults within the 4 GB VRAM budget.

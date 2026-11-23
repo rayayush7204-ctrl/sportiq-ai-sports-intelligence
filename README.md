@@ -1,6 +1,6 @@
 # SportIQ — AI-Powered Sports Video Intelligence
 
-> **Status: Phase 1 & Phase 2 Implemented & Verified** · Computer Vision + Machine Learning Platform
+> **Status: Phase 1, Phase 2 & Phase 3 Step 1 Baseline Implemented & Verified** · Computer Vision + Machine Learning Platform
 
 SportIQ is a practical football-video analysis platform designed to turn ordinary match footage into structured, explainable match insights. The platform pipeline covers video ingestion, player and ball detection, multi-object tracking, team identification, pitch mapping, and movement/possession analytics.
 
@@ -58,7 +58,7 @@ Multi-Object Tracking (ByteTrack / BoT-SORT)
 | **Multi-Object Tracking** | ByteTrack, BoT-SORT | Planned (Phase 4) |
 | **Data & Scientific** | NumPy (2.4.6), Pandas (2.3.3), Scipy (1.17.1) | Installed |
 | **Machine Learning** | scikit-learn (1.9.1) | Installed |
-| **Testing** | pytest (9.2.0) | Active (104 passing tests) |
+| **Testing** | pytest (9.2.0) | Active (105 passing tests) |
 | **API & Serving** | FastAPI, Uvicorn | Planned (Phase 6) |
 
 ## Repository Layout
@@ -224,8 +224,10 @@ sportiq detect-frames data/processed/sample/frames --output-jsonl data/processed
 sportiq detect-frames data/processed/sample/frames/frame_000000.jpg --json
 ```
 
+The detector automatically discovers and parses the Phase 1 `frames.jsonl` manifest (`extracted_frame_filename`, `original_frame_index`, `timestamp_ms`), preserving exact source frame numbers (including 0-based frame 0) and timestamps (including 0.0 ms) across streaming JSONL exports.
+
 ### 5. Running Automated Tests
-Run the complete automated test suite (104 unit and integration tests):
+Run the complete automated test suite (105 unit and integration tests):
 ```powershell
 pytest -v
 ```
@@ -235,7 +237,7 @@ pytest -v
 - [x] **Day 1: Environment & GPU verification** (Python 3.11, PyTorch 2.15+cu132, RTX 3050)
 - [x] **Day 2: Video inspection and frame extraction** (`sportiq.video`, CLI, JSONL manifest, tests)
 - [x] **Day 3: Dataset engineering & MOT/YOLO pipeline** (`sportiq.dataset`, 4-class taxonomy, MOT20 parser, validator, deterministic splitter, visualizer, materializer, 90 tests)
-- [x] **Day 4: Pretrained detector baseline** (Phase 3 Step 1: `sportiq.detection`, YOLO11n, GPU FP16, JSONL prediction export, 104 tests)
+- [x] **Day 4: Pretrained detector baseline** (Phase 3 Step 1: `sportiq.detection`, YOLO11n, GPU FP16, JSONL prediction export, 105 tests)
 - [ ] **Day 5: Multi-object tracking (ByteTrack)** (track association across frames, ID retention)
 - [ ] **Day 6: BoT-SORT comparison and team clustering** (jersey appearance features)
 - [ ] **Day 7: Ball association, possession estimation, and heatmaps**

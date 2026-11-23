@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Dict, List
 from unittest.mock import MagicMock
@@ -192,7 +193,7 @@ def test_detector_predict_frames_with_manifest_mocked(tmp_path: Path) -> None:
     cv2.imwrite(str(frames_dir / "frame_000001.jpg"), dummy_img)
     cv2.imwrite(str(frames_dir / "frame_000002.jpg"), dummy_img)
 
-    # Write frames.jsonl manifest
+    # Write frames.jsonl manifest using legacy alias
     manifest_file = frames_dir / "frames.jsonl"
     manifest_lines = [
         '{"frame_filename": "frame_000001.jpg", "original_frame_index": 1, "timestamp_ms": 40.0}',
@@ -220,6 +221,83 @@ def test_detector_predict_frames_with_manifest_mocked(tmp_path: Path) -> None:
     assert results[1].frame_index == 2
     assert results[1].timestamp_ms == 80.0
     assert out_jsonl.exists()
+
+
+def test_detector_predict_frames_production_manifest_schema(tmp_path: Path) -> None:
+    """Test predict_frames with the actual Phase 1 FrameMetadata schema.
+
+    Verifies that:
+    - extracted_frame_filename is resolved and basename-matched against disk image filenames.
+    - original_frame_index=0 is explicitly preserved (not replaced with stem or None).
+    - timestamp_ms=0.0 is explicitly preserved.
+    - original_frame_index=30 and timestamp_ms=1000.0 are preserved.
+    - JSONL prediction output file retains exact frame indices and timestamps.
+    """
+    frames_dir = tmp_path / "frames"
+    frames_dir.mkdir()
+
+    import cv2
+    dummy_img = np.zeros((100, 100, 3), dtype=np.uint8)
+    cv2.imwrite(str(frames_dir / "frame_000000.jpg"), dummy_img)
+    cv2.imwrite(str(frames_dir / "frame_000030.jpg"), dummy_img)
+
+    # Write frames.jsonl manifest using exact Phase 1 FrameMetadata schema
+    manifest_file = tmp_path / "frames.jsonl"  # in parent directory like sample layout
+    manifest_lines = [
+        json.dumps({
+            "source_filename": "sample.mp4",
+            "original_frame_index": 0,
+            "timestamp_ms": 0.0,
+            "extracted_frame_filename": "frames/frame_000000.jpg",
+            "frame_width": 1280,
+            "frame_height": 720,
+        }),
+        json.dumps({
+            "source_filename": "sample.mp4",
+            "original_frame_index": 30,
+            "timestamp_ms": 1000.0,
+            "extracted_frame_filename": "frames/frame_000030.jpg",
+            "frame_width": 1280,
+            "frame_height": 720,
+        }),
+    ]
+    manifest_file.write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
+
+    detector = YOLODetector(config=DetectorConfig(device="cpu", half=False))
+
+    mock_model = MagicMock()
+    mock_model.names = {0: "person"}
+    mock_result = MagicMock()
+    mock_result.boxes = None  # No detections
+    mock_model.return_value = [mock_result]
+
+    detector._model = mock_model
+    detector._class_names = {0: "person"}
+
+    out_jsonl = tmp_path / "predictions.jsonl"
+    results = detector.predict_frames(frames_dir, output_jsonl=out_jsonl)
+
+    assert len(results) == 2
+    # Verify result 0 (frame_000000.jpg)
+    assert results[0].source == "frame_000000.jpg"
+    assert results[0].frame_index == 0
+    assert results[0].timestamp_ms == 0.0
+
+    # Verify result 1 (frame_000030.jpg)
+    assert results[1].source == "frame_000030.jpg"
+    assert results[1].frame_index == 30
+    assert results[1].timestamp_ms == 1000.0
+
+    # Verify predictions.jsonl export contents
+    assert out_jsonl.exists()
+    saved_lines = [json.loads(line) for line in out_jsonl.read_text(encoding="utf-8").strip().splitlines()]
+    assert len(saved_lines) == 2
+    assert saved_lines[0]["source"] == "frame_000000.jpg"
+    assert saved_lines[0]["frame_index"] == 0
+    assert saved_lines[0]["timestamp_ms"] == 0.0
+    assert saved_lines[1]["source"] == "frame_000030.jpg"
+    assert saved_lines[1]["frame_index"] == 30
+    assert saved_lines[1]["timestamp_ms"] == 1000.0
 
 
 def test_detection_visualizer_rendering(tmp_path: Path) -> None:

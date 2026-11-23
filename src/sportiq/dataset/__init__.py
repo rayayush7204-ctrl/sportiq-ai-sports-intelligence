@@ -34,6 +34,15 @@ from sportiq.dataset.dataset_materializer import (
 )
 from sportiq.dataset.dataset_splitter import DatasetSplit, DatasetSplitter
 from sportiq.dataset.downloader import SoccerNetDownloaderHelper
+from sportiq.dataset.frame_acquisition import (
+    INTERNAL_SPLIT_MATCHES,
+    DatasetIntegrityReport,
+    ImageIntegrityAuditor,
+    MatchDatasetMaterializer,
+    SequenceIntegrityReport,
+    StorageBudgetChecker,
+    ZipPathSafetyValidator,
+)
 from sportiq.dataset.statistics import DatasetStatistics, DatasetStatisticsReporter
 from sportiq.dataset.visualizer import CLASS_COLORS_BGR, draw_annotations, visualize_sequence_frame
 from sportiq.dataset.yolo_converter import YOLOConverter, YOLOInstance
@@ -70,4 +79,11 @@ __all__ = [
     "SoccerNetCatalog",
     "build_soccernet_catalog",
     "group_sequences_by_game",
+    "ZipPathSafetyValidator",
+    "StorageBudgetChecker",
+    "ImageIntegrityAuditor",
+    "MatchDatasetMaterializer",
+    "SequenceIntegrityReport",
+    "DatasetIntegrityReport",
+    "INTERNAL_SPLIT_MATCHES",
 ]

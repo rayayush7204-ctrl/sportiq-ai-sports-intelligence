@@ -58,7 +58,7 @@ Multi-Object Tracking (ByteTrack / BoT-SORT)
 | **Multi-Object Tracking** | ByteTrack, BoT-SORT | Planned (Phase 4) |
 | **Data & Scientific** | NumPy (2.4.6), Pandas (2.3.3), Scipy (1.17.1) | Installed |
 | **Machine Learning** | scikit-learn (1.9.1) | Installed |
-| **Testing** | pytest (9.2.0) | Active (111 passing tests) |
+| **Testing** | pytest (9.2.0) | Active (118 passing tests) |
 | **API & Serving** | FastAPI, Uvicorn | Planned (Phase 6) |
 
 ## Repository Layout
@@ -91,6 +91,7 @@ sportiq-ai-sports-intelligence/
 │   │   ├── dataset_splitter.py     # Deterministic match-level splitting
 │   │   ├── statistics.py           # Ground-truth class balance & track analytics
 │   │   ├── catalog.py              # Multi-match catalog & independent game grouping
+│   │   ├── frame_acquisition.py    # Resilient frame extraction & match materializer
 │   │   ├── visualizer.py           # Ground-truth bbox rendering on frames
 │   │   └── downloader.py           # Remote HF inventory inspection helper
 │   ├── detection/       # Object detection modules (Phase 3)
@@ -244,7 +245,7 @@ pytest -v
 - [x] **Day 1: Environment & GPU verification** (Python 3.11, PyTorch 2.15+cu132, RTX 3050)
 - [x] **Day 2: Video inspection and frame extraction** (`sportiq.video`, CLI, JSONL manifest, tests)
 - [x] **Day 3: Dataset engineering & MOT/YOLO pipeline** (`sportiq.dataset`, 4-class taxonomy, MOT20 parser, validator, deterministic splitter, visualizer, materializer, 90 tests)
-- [x] **Day 4: Pretrained detector baseline & multi-match audit** (Phase 3 Step 1 baseline + Step 2A catalog & independent game audit, 111 tests)
+- [x] **Day 4: Pretrained detector baseline & dataset expansion** (Phase 3 Step 1 baseline + Step 2A catalog + Step 2B acquisition & materializer audit, 118 tests)
 - [ ] **Day 5: Multi-object tracking (ByteTrack)** (track association across frames, ID retention)
 - [ ] **Day 6: BoT-SORT comparison and team clustering** (jersey appearance features)
 - [ ] **Day 7: Ball association, possession estimation, and heatmaps**

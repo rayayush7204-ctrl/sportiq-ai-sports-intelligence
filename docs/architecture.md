@@ -157,6 +157,12 @@ Input Video File (.mp4, .mov, .avi)
   - `MatchCatalogGroup`: Groups sequences strictly by verified `game_id` from `gameinfo.ini`, guaranteeing no synthetic match generation and reporting aggregate class balance per match.
   - `SoccerNetCatalog`: Serializes machine-readable JSON catalogs and comprehensive markdown reports auditing remote repository inventories, match distribution, and image availability gaps.
 
+#### 10. `sportiq.dataset.frame_acquisition`
+- **`ZipPathSafetyValidator`**: Rejects path traversal tokens (`..`), leading slashes, drive letters, and unauthorized roots to ensure secure ZIP extraction.
+- **`StorageBudgetChecker`**: Validates acquisition volumes against the 6 GiB approved ceiling and requires $\ge 20\%$ disk free-space headroom before transferring data.
+- **`ImageIntegrityAuditor`**: Audits image frames against `seqinfo.ini` expected length, resolution, format, zero-byte status, and OpenCV decoding validity.
+- **`MatchDatasetMaterializer`**: Enforces strict match-level split assignment (Train: Games 4, 6, 9; Val: Game 8; Test: Games 7, 11) with zero match leakage and materializes standard YOLO `images/` and `labels/` folders.
+
 ---
 
 ### Phase 3: Object Detection Baseline (`sportiq.detection`)

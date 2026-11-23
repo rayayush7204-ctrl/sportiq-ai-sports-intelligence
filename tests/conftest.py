@@ -60,6 +60,12 @@ def create_synthetic_video(
 
 
 @pytest.fixture
+def make_synthetic_video():
+    """Fixture returning the synthetic video generator function."""
+    return create_synthetic_video
+
+
+@pytest.fixture
 def synthetic_video_path(tmp_path: Path) -> Path:
     """Fixture providing a 60-frame, 30-FPS synthetic video (2.0s duration)."""
     video_file = tmp_path / "synthetic_test_video.mp4"

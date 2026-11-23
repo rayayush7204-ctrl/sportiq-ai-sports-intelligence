@@ -75,6 +75,14 @@ class VideoReader:
         except Exception:
             return "unknown"
 
+    def _compute_safe_source_path(self) -> str:
+        """Compute a safe relative POSIX path or filename without leaking absolute Windows host paths."""
+        try:
+            rel = self.path.relative_to(Path.cwd())
+            return rel.as_posix()
+        except (ValueError, RuntimeError):
+            return self.path.name
+
     def get_metadata(self) -> VideoMetadata:
         """Inspect and return complete metadata for the video.
 
@@ -114,8 +122,10 @@ class VideoReader:
             file_size_mb = round(file_size_bytes / (1024 * 1024), 2)
             duration_seconds = round(total_frames / fps, 3)
 
+            safe_source_path = self._compute_safe_source_path()
+
             self._metadata = VideoMetadata(
-                source_path=str(self.path),
+                source_path=safe_source_path,
                 filename=self.path.name,
                 file_size_bytes=file_size_bytes,
                 file_size_mb=file_size_mb,

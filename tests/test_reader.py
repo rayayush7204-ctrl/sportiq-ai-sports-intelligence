@@ -49,6 +49,9 @@ def test_valid_video_inspection(synthetic_video_path: Path):
     metadata = reader.get_metadata()
 
     assert metadata.filename == synthetic_video_path.name
+    # Ensure source_path is safe and does not leak Windows drive paths (e.g. C:\)
+    assert not metadata.source_path.startswith("C:")
+    assert "\\" not in metadata.source_path
     assert metadata.width == 320
     assert metadata.height == 240
     assert metadata.fps == 30.0
@@ -113,3 +116,45 @@ def test_invalid_sampling_step(synthetic_video_path: Path):
     reader = VideoReader(synthetic_video_path)
     with pytest.raises(ValueError, match="sample_every_n_frames must be >= 1"):
         list(reader.read_frames(sample_every_n_frames=0))
+
+
+def test_source_path_inside_workspace(make_synthetic_video):
+    """Verify source file inside project workspace produces a relative POSIX path."""
+    local_video_path = Path("data/raw/test_regression_inside.mp4")
+    try:
+        make_synthetic_video(local_video_path, width=160, height=120, fps=10.0, num_frames=5)
+        reader = VideoReader(local_video_path)
+        meta = reader.get_metadata()
+        assert meta.source_path == "data/raw/test_regression_inside.mp4"
+        assert not meta.source_path.startswith("C:")
+        assert "\\" not in meta.source_path
+    finally:
+        if local_video_path.exists():
+            local_video_path.unlink()
+
+
+def test_source_path_outside_workspace(tmp_path: Path, make_synthetic_video):
+    """Verify source file outside project workspace falls back to its filename."""
+    outside_video = tmp_path / "outside_regression_clip.mp4"
+    make_synthetic_video(outside_video, width=160, height=120, fps=10.0, num_frames=5)
+    reader = VideoReader(outside_video)
+    meta = reader.get_metadata()
+    assert meta.source_path == "outside_regression_clip.mp4"
+    assert "\\" not in meta.source_path
+    assert not meta.source_path.startswith("C:")
+
+
+def test_no_windows_host_leakage_in_exported_metadata(synthetic_video_path: Path):
+    """Verify exported JSON never leaks Windows username or absolute host drive paths."""
+    import os
+
+    reader = VideoReader(synthetic_video_path)
+    meta = reader.get_metadata()
+    json_str = meta.to_json()
+    username = os.environ.get("USERNAME", "")
+    if username:
+        assert username not in json_str
+    assert "C:\\" not in json_str
+    assert "c:\\" not in json_str
+    assert "Users\\" not in json_str
+    assert "Users/" not in json_str

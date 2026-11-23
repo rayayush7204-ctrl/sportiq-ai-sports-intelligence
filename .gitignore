@@ -1,29 +1,42 @@
-# Python
+# Python artifacts & bytecode
 __pycache__/
 *.py[cod]
+*$py.class
 *.pyd
 .Python
+
+# Virtual environments
 .venv/
 venv/
 env/
+ENV/
+env.bak/
+venv.bak/
 
-# Tooling
+# Testing & linting tooling
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .ipynb_checkpoints/
+.coverage
+htmlcov/
 
-# Environment / secrets
+# Environment variables & secrets
 .env
 .env.*
-!.env.example
+*.env
+*.secret
+*.key
+*.pem
+*.cert
+!*.env.example
 
-# Data and generated outputs (keep directory placeholders)
-data/raw/**
-data/processed/**
-data/annotations/**
+# Data directories and video assets (keep directory placeholders)
+data/raw/*
 !data/raw/.gitkeep
+data/processed/*
 !data/processed/.gitkeep
+data/annotations/*
 !data/annotations/.gitkeep
 runs/
 outputs/
@@ -31,17 +44,25 @@ outputs/
 *.mov
 *.avi
 *.mkv
+*.webm
+*.flv
 
-# Model weights and checkpoints
-models/weights/**
+# Model weights and checkpoint files
+models/weights/*
 !models/weights/.gitkeep
 *.pt
 *.pth
 *.onnx
 *.engine
+*.safetensors
+*.bin
+*.ckpt
+*.weights
 
-# OS / IDE
+# Operating System & IDE
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+*.swp
+*.swo

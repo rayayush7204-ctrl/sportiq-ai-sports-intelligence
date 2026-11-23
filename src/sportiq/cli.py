@@ -17,6 +17,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from sportiq import __version__
+from sportiq.dataset.annotation_parser import load_sequence
+from sportiq.dataset.annotation_validator import AnnotationValidator
+from sportiq.dataset.class_mapping import ClassTaxonomyType
+from sportiq.dataset.dataset_splitter import DatasetSplitter
+from sportiq.dataset.statistics import DatasetStatisticsReporter
+from sportiq.dataset.visualizer import visualize_sequence_frame
+from sportiq.dataset.yolo_converter import YOLOConverter
 from sportiq.video.frame_extractor import FrameExtractor
 from sportiq.video.reader import InvalidVideoError, VideoReader
 
@@ -174,6 +181,217 @@ def extract_frames_command(args: argparse.Namespace) -> int:
         return 1
 
 
+def convert_dataset_command(args: argparse.Namespace) -> int:
+    """Convert SoccerNet MOT sequence annotations to YOLO format with metadata sidecar."""
+    sequence_path = Path(args.sequence_dir)
+
+    try:
+        sequence = load_sequence(sequence_path)
+        taxonomy = ClassTaxonomyType(args.taxonomy)
+        validator = AnnotationValidator(clip_boxes=not args.no_clip)
+        converter = YOLOConverter(taxonomy=taxonomy, validator=validator)
+
+        output_dir = Path(args.output_dir) if args.output_dir else sequence_path / "yolo"
+        summary = converter.convert_sequence(sequence=sequence, output_dir=output_dir)
+
+        if getattr(args, "json", False):
+            print(json.dumps(summary, indent=2))
+        else:
+            print("=" * 60)
+            print(f"SportIQ YOLO Conversion Complete — {summary['sequence_name']}")
+            print("=" * 60)
+            print(f"Taxonomy:               {summary['taxonomy']}")
+            print(f"Labels Directory:       {summary['labels_directory']}")
+            print(f"Manifest JSONL:         {summary['manifest_path']}")
+            print(f"Total Annotations:      {summary['total_annotations']}")
+            print(f"Exported YOLO Boxes:    {summary['exported_yolo_boxes']}")
+            print(f"Skipped Unmapped:       {summary['skipped_unmapped_boxes']}")
+            val = summary["validation"]
+            print(f"Validation Pass Rate:   {val['pass_rate_pct']}% (Clipped: {val['clipped_count']}, Dropped: {val['dropped_out_of_bounds'] + val['dropped_non_positive_dims']})")
+            print("=" * 60)
+        return 0
+
+    except (FileNotFoundError, NotADirectoryError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        logger.exception("Unexpected error during YOLO conversion: %s", e)
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def split_dataset_command(args: argparse.Namespace) -> int:
+    """Partition sequences deterministically across train, val, and test splits."""
+    root_dir = Path(args.sequences_dir).resolve()
+
+    try:
+        # Collect sequences
+        seq_names: List[str] = []
+        match_grouping: Dict[str, str] = {}
+
+        if (root_dir / "seqinfo.ini").exists():
+            seq_names = [root_dir.name]
+            gameinfo_path = root_dir / "gameinfo.ini"
+            if gameinfo_path.exists():
+                seq_obj = load_sequence(root_dir)
+                if seq_obj.game_info and seq_obj.game_info.game_id:
+                    match_grouping[root_dir.name] = seq_obj.game_info.game_id
+        elif root_dir.is_dir():
+            for child in sorted(root_dir.iterdir()):
+                if child.is_dir() and (child / "seqinfo.ini").exists():
+                    seq_names.append(child.name)
+                    gameinfo_path = child / "gameinfo.ini"
+                    if gameinfo_path.exists():
+                        try:
+                            seq_obj = load_sequence(child)
+                            if seq_obj.game_info and seq_obj.game_info.game_id:
+                                match_grouping[child.name] = seq_obj.game_info.game_id
+                        except Exception:
+                            pass
+
+        if not seq_names:
+            print(f"Error: No valid sequences found in {root_dir}", file=sys.stderr)
+            return 1
+
+        splitter = DatasetSplitter(random_seed=args.seed)
+        split_result = splitter.split_sequences(
+            sequence_names=seq_names,
+            train_ratio=args.train_ratio,
+            val_ratio=args.val_ratio,
+            test_ratio=args.test_ratio,
+            match_grouping=match_grouping if match_grouping else None,
+        )
+
+        yaml_content = None
+        if args.output_yaml:
+            taxonomy = ClassTaxonomyType(args.taxonomy)
+            yaml_content = DatasetSplitter.generate_yolo_yaml(
+                dataset_root=root_dir,
+                taxonomy=taxonomy,
+                output_path=args.output_yaml,
+            )
+
+        output_dict = split_result.to_dict()
+        if args.output_yaml:
+            output_dict["dataset_yaml"] = str(Path(args.output_yaml).resolve())
+
+        if getattr(args, "json", False):
+            print(json.dumps(output_dict, indent=2))
+        else:
+            print("=" * 60)
+            print("SportIQ Deterministic Dataset Partition")
+            print("=" * 60)
+            print(f"Total Sequences:    {output_dict['total_count']}")
+            print(f"Train Sequences:    {output_dict['train_count']} -> {', '.join(split_result.train_sequences) or 'None'}")
+            print(f"Val Sequences:      {output_dict['val_count']} -> {', '.join(split_result.val_sequences) or 'None'}")
+            print(f"Test Sequences:     {output_dict['test_count']} -> {', '.join(split_result.test_sequences) or 'None'}")
+            if args.output_yaml:
+                print(f"Saved dataset.yaml: {Path(args.output_yaml).resolve()}")
+            print("=" * 60)
+        return 0
+
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        logger.exception("Unexpected error during dataset splitting: %s", e)
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def dataset_stats_command(args: argparse.Namespace) -> int:
+    """Analyze sequence ground-truth distributions, class counts, and track lengths."""
+    root_dir = Path(args.sequences_dir).resolve()
+
+    try:
+        sequences: List[Any] = []
+        if (root_dir / "seqinfo.ini").exists():
+            sequences.append(load_sequence(root_dir))
+        elif root_dir.is_dir():
+            for child in sorted(root_dir.iterdir()):
+                if child.is_dir() and (child / "seqinfo.ini").exists():
+                    try:
+                        sequences.append(load_sequence(child))
+                    except Exception as e:
+                        logger.warning("Could not load sequence %s: %e", child.name, e)
+
+        if not sequences:
+            print(f"Error: No valid sequences found in {root_dir}", file=sys.stderr)
+            return 1
+
+        taxonomy = ClassTaxonomyType(args.taxonomy)
+        reporter = DatasetStatisticsReporter(taxonomy=taxonomy)
+        stats = reporter.analyze(sequences)
+        stats_dict = stats.to_dict()
+
+        if getattr(args, "json", False):
+            print(json.dumps(stats_dict, indent=2))
+        else:
+            print("=" * 60)
+            print("SportIQ Ground-Truth Dataset Statistics")
+            print("=" * 60)
+            print(f"Sequences Analyzed:     {stats.total_sequences}")
+            print(f"Total Frames:           {stats.total_frames:,}")
+            print(f"Total Annotations:      {stats.total_annotations:,}")
+            print(f"Unique Tracks:          {stats.unique_tracks:,}")
+            print(f"Canonical Classes:      {stats.canonical_class_distribution}")
+            print(f"Raw Classes:            {stats.raw_class_distribution}")
+            print(f"Staff Annotations:      {stats.staff_annotation_count} ({stats.staff_percentage}%)")
+            print(f"Track Length Mean:      {stats.track_length_metrics.get('mean_frames', 0)} frames (Median: {stats.track_length_metrics.get('median_frames', 0)})")
+            print(f"BBox Mean Size:         {stats.bbox_dimension_metrics.get('mean_width_px', 0)}x{stats.bbox_dimension_metrics.get('mean_height_px', 0)} px")
+            print("=" * 60)
+        return 0
+
+    except (ValueError, FileNotFoundError, NotADirectoryError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        logger.exception("Unexpected error during dataset stats: %s", e)
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def visualize_annotations_command(args: argparse.Namespace) -> int:
+    """Render ground-truth bounding boxes, track IDs, and classes onto frame image."""
+    sequence_path = Path(args.sequence_dir)
+
+    try:
+        sequence = load_sequence(sequence_path)
+        taxonomy = ClassTaxonomyType(args.taxonomy)
+        output_path = Path(args.output).resolve() if args.output else sequence_path / f"vis_frame_{args.frame_id:06d}.jpg"
+
+        visualize_sequence_frame(
+            sequence=sequence,
+            frame_id=args.frame_id,
+            output_path=output_path,
+            taxonomy=taxonomy,
+        )
+
+        if getattr(args, "json", False):
+            print(json.dumps({
+                "sequence_name": sequence.name,
+                "frame_id": args.frame_id,
+                "output_image": str(output_path),
+                "status": "success",
+            }, indent=2))
+        else:
+            print("=" * 60)
+            print(f"SportIQ Frame Annotation Visualized — {sequence.name}")
+            print("=" * 60)
+            print(f"Frame ID:           {args.frame_id}")
+            print(f"Output Image:       {output_path}")
+            print("=" * 60)
+        return 0
+
+    except (FileNotFoundError, NotADirectoryError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        logger.exception("Unexpected error during visualization: %s", e)
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Construct command-line parser for sportiq."""
     parser = argparse.ArgumentParser(
@@ -266,6 +484,155 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output extraction summary in JSON format",
     )
     extract_parser.set_defaults(func=extract_frames_command)
+
+    # Command: convert-dataset
+    convert_parser = subparsers.add_parser(
+        "convert-dataset",
+        help="Convert SoccerNet MOT sequence annotations to normalized YOLO format",
+    )
+    convert_parser.add_argument(
+        "sequence_dir",
+        type=str,
+        help="Path to SoccerNet sequence directory (containing seqinfo.ini and gt/gt.txt)",
+    )
+    convert_parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Output directory for labels and metadata (default: <sequence_dir>/yolo)",
+    )
+    convert_parser.add_argument(
+        "--taxonomy",
+        type=str,
+        choices=["four_class", "five_class", "two_class"],
+        default="four_class",
+        help="Detection taxonomy to apply (default: four_class)",
+    )
+    convert_parser.add_argument(
+        "--no-clip",
+        action="store_true",
+        help="Disable clamping partially out-of-bounds bounding boxes to image canvas",
+    )
+    convert_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output conversion summary in JSON format",
+    )
+    convert_parser.set_defaults(func=convert_dataset_command)
+
+    # Command: split-dataset
+    split_parser = subparsers.add_parser(
+        "split-dataset",
+        help="Deterministically split sequences/matches into train, val, and test sets",
+    )
+    split_parser.add_argument(
+        "sequences_dir",
+        type=str,
+        help="Directory containing one or more SoccerNet sequence folders",
+    )
+    split_parser.add_argument(
+        "--train-ratio",
+        type=float,
+        default=0.70,
+        help="Fraction for training split (default: 0.70)",
+    )
+    split_parser.add_argument(
+        "--val-ratio",
+        type=float,
+        default=0.15,
+        help="Fraction for validation split (default: 0.15)",
+    )
+    split_parser.add_argument(
+        "--test-ratio",
+        type=float,
+        default=0.15,
+        help="Fraction for testing split (default: 0.15)",
+    )
+    split_parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42)",
+    )
+    split_parser.add_argument(
+        "--output-yaml",
+        type=str,
+        default=None,
+        help="Optional path to export YOLO-format dataset.yaml",
+    )
+    split_parser.add_argument(
+        "--taxonomy",
+        type=str,
+        choices=["four_class", "five_class", "two_class"],
+        default="four_class",
+        help="Detection taxonomy for dataset.yaml class names (default: four_class)",
+    )
+    split_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output split results in JSON format",
+    )
+    split_parser.set_defaults(func=split_dataset_command)
+
+    # Command: dataset-stats
+    stats_parser = subparsers.add_parser(
+        "dataset-stats",
+        help="Compute ground-truth distributions, class balance, and track length analytics",
+    )
+    stats_parser.add_argument(
+        "sequences_dir",
+        type=str,
+        help="Directory containing one or more SoccerNet sequence folders",
+    )
+    stats_parser.add_argument(
+        "--taxonomy",
+        type=str,
+        choices=["four_class", "five_class", "two_class"],
+        default="four_class",
+        help="Detection taxonomy to evaluate (default: four_class)",
+    )
+    stats_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output dataset statistics in JSON format",
+    )
+    stats_parser.set_defaults(func=dataset_stats_command)
+
+    # Command: visualize-annotations
+    vis_parser = subparsers.add_parser(
+        "visualize-annotations",
+        help="Draw ground-truth bounding boxes, track IDs, and classes on a sequence frame",
+    )
+    vis_parser.add_argument(
+        "sequence_dir",
+        type=str,
+        help="Path to SoccerNet sequence directory",
+    )
+    vis_parser.add_argument(
+        "--frame-id",
+        type=int,
+        default=1,
+        help="Frame ID to visualize (1-based, default: 1)",
+    )
+    vis_parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Output image path (default: <sequence_dir>/vis_frame_<id>.jpg)",
+    )
+    vis_parser.add_argument(
+        "--taxonomy",
+        type=str,
+        choices=["four_class", "five_class", "two_class"],
+        default="four_class",
+        help="Detection taxonomy (default: four_class)",
+    )
+    vis_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output result in JSON format",
+    )
+    vis_parser.set_defaults(func=visualize_annotations_command)
 
     return parser
 

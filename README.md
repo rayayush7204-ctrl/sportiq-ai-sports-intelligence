@@ -1,6 +1,6 @@
 # SportIQ — AI-Powered Sports Video Intelligence
 
-> **Status: Phase 1 Implemented & Verified** · Computer Vision + Machine Learning Platform
+> **Status: Phase 1 & Phase 2 Implemented & Verified** · Computer Vision + Machine Learning Platform
 
 SportIQ is a practical football-video analysis platform designed to turn ordinary match footage into structured, explainable match insights. The platform pipeline covers video ingestion, player and ball detection, multi-object tracking, team identification, pitch mapping, and movement/possession analytics.
 
@@ -9,16 +9,25 @@ The project is built as a rigorous computer-vision engineering system: reproduci
 ## Project Pipeline
 
 ```text
-Football Video (Local / Raw)
+Football Video (Local / Raw) & Tracking Datasets (SoccerNet MOT)
     │
     ▼
-Video Ingestion & Frame Sampling (sportiq.video)   ◄ [PHASE 1 COMPLETE]
+Video Ingestion & Frame Sampling (sportiq.video)       ◄ [PHASE 1 COMPLETE]
     │   ├── Codec, resolution, FPS, duration inspection
     │   ├── Timestamp & original frame index preservation
     │   └── JSONL metadata manifest + JPEG frame exports
     │
     ▼
-Object Detection (YOLO / PyTorch)                 ◄ [PHASE 2 - NEXT]
+Dataset Engineering & MOT/YOLO Converter (sportiq.dataset) ◄ [PHASE 2 COMPLETE]
+    │   ├── SoccerNet MOT20 ground-truth parsing (gt.txt, seqinfo, gameinfo)
+    │   ├── Bounding box validation, clamping, and coordinate sanitization
+    │   ├── 4-class taxonomy (player, goalkeeper, referee, ball) + staff lineage
+    │   ├── Deterministic match-level dataset splitting (zero frame leakage)
+    │   ├── Normalized YOLO label conversion (.txt) + sidecar JSONL manifests
+    │   └── Annotation visualization and empirical dataset analytics
+    │
+    ▼
+Object Detection (YOLO / PyTorch)                     ◄ [PHASE 3 - NEXT]
     │   ├── Player / person detection baseline
     │   └── Football ball detection
     │
@@ -42,13 +51,14 @@ Multi-Object Tracking (ByteTrack / BoT-SORT)
 |---|---|---|
 | **Language** | Python 3.11.9 (64-bit) | Active |
 | **Deep Learning** | PyTorch 2.15.0+cu132, Torchvision 0.29.2+cu132 | Active (CUDA 13.2, RTX 3050 Laptop GPU) |
-| **Object Detection** | Ultralytics YOLO (8.4.216) | Installed |
+| **Dataset Engineering** | SoccerNet MOT parser, YOLO converter, PyYAML | Active (Phase 2) |
+| **Object Detection** | Ultralytics YOLO (8.4.216) | Installed (Phase 3) |
 | **Video Processing** | OpenCV (4.14.0) | Active |
-| **Multi-Object Tracking** | ByteTrack, BoT-SORT | Planned (Phase 3) |
+| **Multi-Object Tracking** | ByteTrack, BoT-SORT | Planned (Phase 4) |
 | **Data & Scientific** | NumPy (2.4.6), Pandas (2.3.3), Scipy (1.17.1) | Installed |
 | **Machine Learning** | scikit-learn (1.9.1) | Installed |
-| **Testing** | pytest (9.2.0) | Active (17 passing tests) |
-| **API & Serving** | FastAPI, Uvicorn | Planned (Phase 5) |
+| **Testing** | pytest (9.2.0) | Active (57 passing tests) |
+| **API & Serving** | FastAPI, Uvicorn | Planned (Phase 6) |
 
 ## Repository Layout
 
@@ -68,12 +78,21 @@ sportiq-ai-sports-intelligence/
 │   ├── inspect_video.py
 │   └── extract_frames.py
 ├── src/sportiq/         # Core Python package
-│   ├── video/           # Ingestion, reader, metadata, extraction
+│   ├── video/           # Ingestion, reader, metadata, extraction (Phase 1)
 │   │   ├── metadata.py
 │   │   ├── reader.py
 │   │   └── frame_extractor.py
-│   ├── detection/       # Object detection modules (Phase 2)
-│   ├── tracking/        # Multi-object tracking (Phase 3)
+│   ├── dataset/         # Dataset engineering & MOT/YOLO pipeline (Phase 2)
+│   │   ├── class_mapping.py        # 4-class, 5-class, 2-class taxonomies
+│   │   ├── annotation_parser.py    # SoccerNet MOT20 gt.txt, seqinfo, gameinfo
+│   │   ├── annotation_validator.py # Coordinate bounds checking & clipping
+│   │   ├── yolo_converter.py       # Normalized YOLO labels & sidecar JSONL
+│   │   ├── dataset_splitter.py     # Deterministic match-level splitting
+│   │   ├── statistics.py           # Ground-truth class balance & track analytics
+│   │   ├── visualizer.py           # Ground-truth bbox rendering on frames
+│   │   └── downloader.py           # Remote HF inventory inspection helper
+│   ├── detection/       # Object detection modules (Phase 3)
+│   ├── tracking/        # Multi-object tracking (Phase 4)
 │   ├── analytics/       # Possession, team clustering, heatmaps
 │   ├── visualization/   # Video and pitch renderers
 │   └── cli.py           # Unified command-line interface
@@ -144,8 +163,38 @@ This generates:
 - `data/processed/<video_stem>/frames.jsonl` (manifest recording `source_filename`, `original_frame_index`, `timestamp_ms`, `extracted_frame_filename`, `frame_width`, `frame_height`)
 - `data/processed/<video_stem>/video_metadata.json` (complete video stream metadata)
 
-### 4. Running Automated Tests
-Run the test suite with synthetic video fixtures:
+### 4. Dataset Engineering CLI (Phase 2)
+
+#### Convert SoccerNet MOT to YOLO Format
+Convert MOT tracking sequences to normalized YOLO detection format (`.txt`) while preserving original tracking IDs and raw class lineage in `labels_metadata.jsonl`:
+```powershell
+# Convert sequence with primary 4-class taxonomy (player, goalkeeper, referee, ball)
+sportiq convert-dataset data/raw/soccernet/SNMOT-060 --output-dir data/processed/yolo --taxonomy four_class
+
+# Output conversion summary as JSON
+sportiq convert-dataset data/raw/soccernet/SNMOT-060 --json
+```
+
+#### Deterministic Match-Level Dataset Splitting
+Split sequences into disjoint train/val/test partitions guaranteeing zero frame leakage (grouped by match/game ID when available) and generate YOLO `dataset.yaml`:
+```powershell
+sportiq split-dataset data/raw/soccernet/ --train-ratio 0.70 --val-ratio 0.15 --test-ratio 0.15 --output-yaml data/processed/yolo/dataset.yaml
+```
+
+#### Ground-Truth Empirical Statistics & Class Distribution
+Inspect class balance, staff frequency, track duration statistics, and bounding-box dimensions:
+```powershell
+sportiq dataset-stats data/raw/soccernet/ --taxonomy four_class
+```
+
+#### Annotation Visualizer
+Draw ground-truth bounding boxes, track IDs, and color-coded classes onto sequence frames:
+```powershell
+sportiq visualize-annotations data/raw/soccernet/SNMOT-060 --frame-id 1 --output data/processed/vis_frame_1.jpg
+```
+
+### 5. Running Automated Tests
+Run the complete automated test suite (57 unit and integration tests):
 ```powershell
 pytest -v
 ```
@@ -154,9 +203,9 @@ pytest -v
 
 - [x] **Day 1: Environment & GPU verification** (Python 3.11, PyTorch 2.15+cu132, RTX 3050)
 - [x] **Day 2: Video inspection and frame extraction** (`sportiq.video`, CLI, JSONL manifest, tests)
-- [ ] **Day 3: Pretrained player detector baseline** (YOLOv8 / YOLO11 person detection, mAP metrics)
-- [ ] **Day 4: Football-ball detection baseline / fine-tuning**
-- [ ] **Day 5: ByteTrack integration** (track identities across frames)
+- [x] **Day 3: Dataset engineering & MOT/YOLO pipeline** (`sportiq.dataset`, 4-class taxonomy, MOT20 parser, validator, deterministic splitter, visualizer, 57 tests)
+- [ ] **Day 4: Pretrained player & ball detector baseline** (YOLOv8 / YOLO11 detection, evaluation metrics)
+- [ ] **Day 5: Multi-object tracking (ByteTrack)** (track association across frames, ID retention)
 - [ ] **Day 6: BoT-SORT comparison and team clustering** (jersey appearance features)
 - [ ] **Day 7: Ball association, possession estimation, and heatmaps**
 - [ ] **Day 8: Homography prototype and pitch visualization**

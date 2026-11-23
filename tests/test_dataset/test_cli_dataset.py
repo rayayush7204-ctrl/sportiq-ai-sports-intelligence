@@ -160,3 +160,74 @@ def test_cli_materialize_and_verify_dataset(synthetic_mot_sequence: Path, tmp_pa
     ver_data = json.loads(captured_ver.out)
     assert ver_data["is_aligned"] is True
     assert ver_data["total_images"] == 2
+
+
+def test_cli_materialize_dataset_missing_game_id_strict(
+    synthetic_multi_sequences: Path, tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """Test CLI materialize-dataset fails when match metadata is incomplete and strict mode is active."""
+    # Convert all sequences first to provide labels
+    yolo_labels = tmp_path / "multi_labels"
+    for seq_dir in sorted(synthetic_multi_sequences.iterdir()):
+        if seq_dir.is_dir() and (seq_dir / "seqinfo.ini").exists():
+            main([
+                "convert-dataset",
+                str(seq_dir),
+                "--output-dir", str(yolo_labels),
+                "--json",
+            ])
+            capsys.readouterr()
+
+    # Delete gameinfo.ini from SNMOT-001
+    bad_gameinfo = synthetic_multi_sequences / "SNMOT-001" / "gameinfo.ini"
+    if bad_gameinfo.exists():
+        bad_gameinfo.unlink()
+
+    mat_out = tmp_path / "mat_strict_fail"
+    ret = main([
+        "materialize-dataset",
+        str(synthetic_multi_sequences),
+        "--labels-dir", str(yolo_labels / "labels"),
+        "--output-dir", str(mat_out),
+    ])
+    assert ret == 1
+    captured = capsys.readouterr()
+    assert "Incomplete match metadata" in captured.err
+    assert "SNMOT-001" in captured.err
+
+
+def test_cli_materialize_dataset_allow_missing_game_id(
+    synthetic_multi_sequences: Path, tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """Test CLI materialize-dataset succeeds with warning when --allow-missing-game-id is passed."""
+    yolo_labels = tmp_path / "multi_labels"
+    for seq_dir in sorted(synthetic_multi_sequences.iterdir()):
+        if seq_dir.is_dir() and (seq_dir / "seqinfo.ini").exists():
+            main([
+                "convert-dataset",
+                str(seq_dir),
+                "--output-dir", str(yolo_labels),
+                "--json",
+            ])
+            capsys.readouterr()
+
+    # Delete gameinfo.ini from SNMOT-001
+    bad_gameinfo = synthetic_multi_sequences / "SNMOT-001" / "gameinfo.ini"
+    if bad_gameinfo.exists():
+        bad_gameinfo.unlink()
+
+    mat_out = tmp_path / "mat_allow_ok"
+    ret = main([
+        "materialize-dataset",
+        str(synthetic_multi_sequences),
+        "--labels-dir", str(yolo_labels / "labels"),
+        "--output-dir", str(mat_out),
+        "--allow-missing-game-id",
+        "--json",
+    ])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "Incomplete match metadata" in captured.err
+    data = json.loads(captured.out)
+    assert data["status"] == "materialized"
+    assert (mat_out / "dataset.yaml").exists()

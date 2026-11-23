@@ -31,6 +31,6 @@
 - **Annotation Validation & Sanitization**: Complete bounds checking ($0 \le x < W$, $0 \le y < H$), finite-number validation (`math.isfinite()` rejecting NaN and +/-Inf), non-positive dimension rejection, and bounding-box edge clamping.
 - **YOLO Conversion & Sidecar Metadata**: Normalized YOLO detection labels (`<class_id> <x_center> <y_center> <w> <h>`) exported to frame `.txt` files with full tracking metadata sidecars.
 - **Deterministic Partitioning & Strict Match Grouping**: Zero frame-leakage splitting via Largest Remainder quota distribution at sequence and match levels, with strict game_id completeness checks and YOLO `dataset.yaml` generation.
-- **Dataset Materialization & Alignment Verification**: `DatasetMaterializer` supporting zero-duplication manifest and directory layouts, with end-to-end 1:1 image-to-label alignment auditing.
+- **Dataset Materialization & Alignment Verification**: `DatasetMaterializer` supporting zero-duplication manifest and physical directory layouts (`copy`, `hardlink`, `symlink`), explicit 1:1 image-to-label alignment auditing, distinguishing intentional 0-byte negative frames from missing labels, class ID validation, and exact manifest-mode mapping verification.
 - **Annotation Visualizer & CLI Tools**: Integrated CLI commands (`convert-dataset`, `split-dataset`, `dataset-stats`, `visualize-annotations`, `materialize-dataset`, `verify-dataset`) and OpenCV color-coded bounding-box renderer.
-- **Automated Test Coverage**: 67 automated tests passing under `pytest` across video, dataset, materialization, and validation modules.
+- **Automated Test Coverage**: 79 automated tests passing under `pytest` across video, dataset, materialization, label integrity, and validation modules.

@@ -137,4 +137,11 @@ def synthetic_multi_sequences(tmp_path: Path) -> Path:
             encoding="utf-8",
         )
 
+        # img1 dummy image
+        img_dir = sdir / "img1"
+        img_dir.mkdir()
+        dummy_img = np.zeros((1080, 1920, 3), dtype=np.uint8)
+        dummy_img[:, :] = (34, 139, 34)  # Pitch green
+        cv2.imwrite(str(img_dir / "000001.jpg"), dummy_img)
+
     return root

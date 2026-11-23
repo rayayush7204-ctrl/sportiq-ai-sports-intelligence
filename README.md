@@ -57,7 +57,7 @@ Multi-Object Tracking (ByteTrack / BoT-SORT)
 | **Multi-Object Tracking** | ByteTrack, BoT-SORT | Planned (Phase 4) |
 | **Data & Scientific** | NumPy (2.4.6), Pandas (2.3.3), Scipy (1.17.1) | Installed |
 | **Machine Learning** | scikit-learn (1.9.1) | Installed |
-| **Testing** | pytest (9.2.0) | Active (67 passing tests) |
+| **Testing** | pytest (9.2.0) | Active (79 passing tests) |
 | **API & Serving** | FastAPI, Uvicorn | Planned (Phase 6) |
 
 ## Repository Layout

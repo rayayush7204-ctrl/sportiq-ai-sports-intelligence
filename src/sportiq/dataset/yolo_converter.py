@@ -123,12 +123,16 @@ class YOLOConverter:
         skipped_unmapped_boxes = 0
         total_sidecar_records = 0
 
+        # Determine all frames in sequence
+        all_frame_ids = set(range(1, sequence.seq_info.seq_length + 1)) if sequence.seq_info.seq_length > 0 else set()
+        all_frame_ids.update(frames_dict.keys())
+
         with manifest_path.open("w", encoding="utf-8") as manifest_f:
-            for frame_id, ann_list in sorted(frames_dict.items()):
-                # MOT is 1-based, YOLO frame naming is 0-based or 1-based.
+            for frame_id in sorted(all_frame_ids):
                 # Standard practice: match frame filenames (e.g. 000001.txt for frame 1)
                 label_file = labels_dir / f"{frame_id:06d}.txt"
                 yolo_lines: List[str] = []
+                ann_list = frames_dict.get(frame_id, [])
 
                 for ann, (x, y, w, h) in ann_list:
                     # Resolve class from gameinfo.ini mapping if available
@@ -176,6 +180,9 @@ class YOLOConverter:
 
                 if yolo_lines:
                     label_file.write_text("\n".join(yolo_lines) + "\n", encoding="utf-8")
+                else:
+                    # Intentional negative / background frame: create empty label file
+                    label_file.touch(exist_ok=True)
 
         summary = {
             "sequence_name": sequence.name,

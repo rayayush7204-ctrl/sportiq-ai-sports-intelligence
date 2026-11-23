@@ -360,12 +360,33 @@ def materialize_dataset_command(args: argparse.Namespace) -> int:
             return 1
 
         seq_names = list(seq_dict.keys())
-        match_grouping = {
-            s.name: s.game_info.game_id
-            for s in seq_dict.values()
-            if s.game_info and s.game_info.game_id
-        }
+        match_grouping: Dict[str, str] = {}
+        missing_match_metadata: List[str] = []
+
+        for seq_name, seq_obj in seq_dict.items():
+            if seq_obj.game_info and seq_obj.game_info.game_id:
+                match_grouping[seq_name] = seq_obj.game_info.game_id
+            else:
+                missing_match_metadata.append(seq_name)
+
         allow_missing = getattr(args, "allow_missing_game_id", False)
+
+        if match_grouping and missing_match_metadata:
+            msg = (
+                f"Incomplete match metadata: {len(missing_match_metadata)} sequence(s) missing game_id: {missing_match_metadata}."
+            )
+            if not allow_missing:
+                print(
+                    f"Error: {msg} Pass --allow-missing-game-id to explicitly permit downgrade to sequence-level splitting.",
+                    file=sys.stderr,
+                )
+                return 1
+            else:
+                print(
+                    f"Warning: {msg} Explicitly downgrading to sequence-level splitting.",
+                    file=sys.stderr,
+                )
+                match_grouping = {}
 
         splitter = DatasetSplitter(random_seed=args.seed)
         split = splitter.split_sequences(
@@ -373,7 +394,7 @@ def materialize_dataset_command(args: argparse.Namespace) -> int:
             train_ratio=args.train_ratio,
             val_ratio=args.val_ratio,
             test_ratio=args.test_ratio,
-            match_grouping=match_grouping if len(match_grouping) == len(seq_names) else None,
+            match_grouping=match_grouping if match_grouping else None,
             strict_match_grouping=not allow_missing,
         )
 

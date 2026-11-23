@@ -15,6 +15,13 @@ from sportiq.dataset.annotation_parser import (
     parse_seqinfo,
 )
 from sportiq.dataset.annotation_validator import AnnotationValidator, ValidationResult
+from sportiq.dataset.catalog import (
+    MatchCatalogGroup,
+    SequenceCatalogEntry,
+    SoccerNetCatalog,
+    build_soccernet_catalog,
+    group_sequences_by_game,
+)
 from sportiq.dataset.class_mapping import (
     ClassTaxonomy,
     ClassTaxonomyType,
@@ -58,4 +65,9 @@ __all__ = [
     "draw_annotations",
     "visualize_sequence_frame",
     "CLASS_COLORS_BGR",
+    "SequenceCatalogEntry",
+    "MatchCatalogGroup",
+    "SoccerNetCatalog",
+    "build_soccernet_catalog",
+    "group_sequences_by_game",
 ]

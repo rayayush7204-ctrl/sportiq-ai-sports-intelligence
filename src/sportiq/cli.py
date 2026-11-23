@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 from sportiq import __version__
 from sportiq.dataset.annotation_parser import load_sequence
 from sportiq.dataset.annotation_validator import AnnotationValidator
+from sportiq.dataset.catalog import build_soccernet_catalog
 from sportiq.dataset.class_mapping import ClassTaxonomyType
 from sportiq.dataset.dataset_materializer import (
     AlignmentVerificationError,
@@ -574,6 +575,60 @@ def visualize_annotations_command(args: argparse.Namespace) -> int:
         return 1
 
 
+def catalog_dataset_command(args: argparse.Namespace) -> int:
+    """Catalog SoccerNet tracking sequences, group by game_id, and generate audit reports."""
+    annotations_root = Path(args.annotations_dir).resolve()
+    if not annotations_root.is_dir():
+        print(f"Error: Annotations directory not found: {annotations_root}", file=sys.stderr)
+        return 1
+
+    local_frames_root = (
+        Path(args.local_frames_dir).resolve()
+        if getattr(args, "local_frames_dir", None)
+        else None
+    )
+
+    try:
+        catalog = build_soccernet_catalog(
+            annotations_root=annotations_root,
+            local_frames_root=local_frames_root,
+        )
+
+        output_json = (
+            Path(args.output_json).resolve()
+            if getattr(args, "output_json", None)
+            else Path("data/processed/soccernet_catalog.json").resolve()
+        )
+        catalog.save_json(output_json)
+
+        if getattr(args, "output_markdown", None):
+            md_path = Path(args.output_markdown).resolve()
+            md_path.parent.mkdir(parents=True, exist_ok=True)
+            md_path.write_text(catalog.generate_markdown_report(), encoding="utf-8")
+
+        if getattr(args, "json", False):
+            print(catalog.to_json())
+        else:
+            print("=" * 60)
+            print("SportIQ SoccerNet Multi-Match Dataset Catalog")
+            print("=" * 60)
+            print(f"Total Sequences:        {catalog.total_sequences}")
+            print(f"Total Annotations:      {catalog.total_annotations:,}")
+            print(f"Unique Matches (Games): {len(catalog.unique_game_ids)}")
+            print(f"Game IDs:               {', '.join(catalog.unique_game_ids)}")
+            print(f"Candidate New Matches:  {', '.join(catalog.candidate_independent_matches)}")
+            print(f"JSON Export:            {output_json}")
+            if getattr(args, "output_markdown", None):
+                print(f"Markdown Report:        {Path(args.output_markdown).resolve()}")
+            print("=" * 60)
+        return 0
+
+    except Exception as e:
+        logger.exception("Unexpected error during dataset catalog: %s", e)
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def detect_frames_command(args: argparse.Namespace) -> int:
     """Run object detection on an image or directory of extracted video frames."""
     input_path = Path(args.input_path).resolve()
@@ -1092,6 +1147,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output summary in JSON format",
     )
     detect_parser.set_defaults(func=detect_frames_command)
+
+    # 11. catalog-dataset
+    catalog_parser = subparsers.add_parser(
+        "catalog-dataset",
+        help="Catalog SoccerNet tracking sequences, group by game_id, and generate audit reports",
+    )
+    catalog_parser.add_argument(
+        "--annotations-dir",
+        type=str,
+        default="data/raw/soccernet_tracking_2023/annotations",
+        help="Root directory containing annotations (default: data/raw/soccernet_tracking_2023/annotations)",
+    )
+    catalog_parser.add_argument(
+        "--local-frames-dir",
+        type=str,
+        default="data/raw/soccernet",
+        help="Directory containing local sequence frames to check frame availability (default: data/raw/soccernet)",
+    )
+    catalog_parser.add_argument(
+        "--output-json",
+        type=str,
+        default="data/processed/soccernet_catalog.json",
+        help="Destination path for catalog JSON (default: data/processed/soccernet_catalog.json)",
+    )
+    catalog_parser.add_argument(
+        "--output-markdown",
+        type=str,
+        default="docs/dataset_expansion_catalog.md",
+        help="Destination path for Markdown catalog report (default: docs/dataset_expansion_catalog.md)",
+    )
+    catalog_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output summary in JSON format",
+    )
+    catalog_parser.set_defaults(func=catalog_dataset_command)
 
     return parser
 

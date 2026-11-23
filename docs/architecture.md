@@ -151,6 +151,12 @@ Input Video File (.mp4, .mov, .avi)
   - Reverse directory check detects deleted/orphaned images when labels exist on disk.
   - Compatibility note: Ultralytics YOLO requires `/images/` $\to$ `/labels/` path substitution when training from text manifests. For datasets without an `/images/` path token (such as SoccerNet's `img1/`), directory mode (`copy`, `symlink`, `hardlink`) provides standard native compatibility.
 
+#### 9. `sportiq.dataset.catalog`
+- **`build_soccernet_catalog` / `group_sequences_by_game`**:
+  - `SequenceCatalogEntry`: Captures sequence dimensions, frame rate, duration, annotation count, track count, 4-class canonical distribution, and local frame presence.
+  - `MatchCatalogGroup`: Groups sequences strictly by verified `game_id` from `gameinfo.ini`, guaranteeing no synthetic match generation and reporting aggregate class balance per match.
+  - `SoccerNetCatalog`: Serializes machine-readable JSON catalogs and comprehensive markdown reports auditing remote repository inventories, match distribution, and image availability gaps.
+
 ---
 
 ### Phase 3: Object Detection Baseline (`sportiq.detection`)
@@ -188,6 +194,7 @@ Input Video File (.mp4, .mov, .avi)
   - `visualize-annotations`: renders annotated frames with ground-truth boxes and track IDs.
   - `materialize-dataset`: builds zero-duplication YOLO datasets with split manifests or physical layouts.
   - `verify-dataset`: audits image-to-label alignment, missing frames, and coordinate validity.
+  - `catalog-dataset`: catalogs multi-match tracking sequences, groups by game ID, and audits image/annotation availability.
   - `detect-frames`: runs object detection inference on images or extracted-frame directories, exporting JSONL predictions and visual overlays.
 
 ## Engineering Rules

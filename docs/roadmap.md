@@ -33,4 +33,4 @@
 - **Deterministic Partitioning & Strict Match Grouping**: Zero frame-leakage splitting via Largest Remainder quota distribution at sequence and match levels, with strict game_id completeness checks and YOLO `dataset.yaml` generation.
 - **Dataset Materialization & Alignment Verification**: `DatasetMaterializer` supporting zero-duplication manifest and physical directory layouts (`copy`, `hardlink`, `symlink`), explicit 1:1 image-to-label alignment auditing, distinguishing intentional 0-byte negative frames from missing labels, class ID validation, and exact manifest-mode mapping verification.
 - **Annotation Visualizer & CLI Tools**: Integrated CLI commands (`convert-dataset`, `split-dataset`, `dataset-stats`, `visualize-annotations`, `materialize-dataset`, `verify-dataset`) and OpenCV color-coded bounding-box renderer.
-- **Automated Test Coverage**: 79 automated tests passing under `pytest` across video, dataset, materialization, label integrity, and validation modules.
+- **Automated Test Coverage**: 90 automated tests passing under `pytest` across video, dataset, materialization, label integrity, geometric boundary verification, and validation modules.

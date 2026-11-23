@@ -299,12 +299,40 @@ class DatasetMaterializer:
                     f"Invalid class ID {cid} at {lbl_path}:{line_idx}: not defined in dataset names {valid_class_ids}"
                 )
 
-            # Check [0, 1] range bounds
+            # Check [0, 1] range bounds for centers and dimensions
             for val, name in ((xc, "x_center"), (yc, "y_center"), (w, "width"), (h, "height")):
                 if not (0.0 <= val <= 1.0):
                     raise AlignmentVerificationError(
                         f"YOLO coordinate out of [0, 1] range ({name}={val}) at {lbl_path}:{line_idx}"
                     )
+
+            # Check bounding-box geometric extent boundaries:
+            # xc - width / 2 >= 0
+            # xc + width / 2 <= 1
+            # yc - height / 2 >= 0
+            # yc + height / 2 <= 1
+            eps = 1e-5
+            x_min = xc - w / 2.0
+            x_max = xc + w / 2.0
+            y_min = yc - h / 2.0
+            y_max = yc + h / 2.0
+
+            if x_min < -eps:
+                raise AlignmentVerificationError(
+                    f"YOLO bounding box extends beyond left canvas boundary (x_min={x_min:.6f} < 0) at {lbl_path}:{line_idx}"
+                )
+            if x_max > 1.0 + eps:
+                raise AlignmentVerificationError(
+                    f"YOLO bounding box extends beyond right canvas boundary (x_max={x_max:.6f} > 1) at {lbl_path}:{line_idx}"
+                )
+            if y_min < -eps:
+                raise AlignmentVerificationError(
+                    f"YOLO bounding box extends beyond top canvas boundary (y_min={y_min:.6f} < 0) at {lbl_path}:{line_idx}"
+                )
+            if y_max > 1.0 + eps:
+                raise AlignmentVerificationError(
+                    f"YOLO bounding box extends beyond bottom canvas boundary (y_max={y_max:.6f} > 1) at {lbl_path}:{line_idx}"
+                )
 
     @staticmethod
     def _link_or_copy(src: Path, dst: Path, mode: str) -> None:

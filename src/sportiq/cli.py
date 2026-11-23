@@ -272,14 +272,14 @@ def split_dataset_command(args: argparse.Namespace) -> int:
             return 1
 
         allow_missing = getattr(args, "allow_missing_game_id", False)
-        # If some sequences have match metadata but others are missing it:
-        if match_grouping and missing_match_metadata:
+        # If any sequences lack match metadata (partial or all-missing):
+        if missing_match_metadata:
             msg = (
                 f"Incomplete match metadata: {len(missing_match_metadata)} sequence(s) missing game_id: {missing_match_metadata}."
             )
             if not allow_missing:
                 print(
-                    f"Error: {msg} Pass --allow-missing-game-id to explicitly downgrade to sequence-level splitting.",
+                    f"Error: {msg} Pass --allow-missing-game-id to explicitly permit downgrade to sequence-level splitting.",
                     file=sys.stderr,
                 )
                 return 1
@@ -371,7 +371,7 @@ def materialize_dataset_command(args: argparse.Namespace) -> int:
 
         allow_missing = getattr(args, "allow_missing_game_id", False)
 
-        if match_grouping and missing_match_metadata:
+        if missing_match_metadata:
             msg = (
                 f"Incomplete match metadata: {len(missing_match_metadata)} sequence(s) missing game_id: {missing_match_metadata}."
             )

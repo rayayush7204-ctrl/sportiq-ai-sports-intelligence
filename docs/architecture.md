@@ -143,7 +143,8 @@ Input Video File (.mp4, .mov, .avi)
   - Materializes train/val/test splits preserving 1:1 image-to-label correspondence.
   - Zero-duplication manifest mode generates `train.txt`, `val.txt`, `test.txt` containing resolved POSIX image paths, a `labels_manifest.json` sidecar for explicit verification, and standard `dataset.yaml`.
   - Directory mode (`copy`, `symlink`, `hardlink`) materializes standard Ultralytics-compatible `images/<split>` and `labels/<split>` directories.
-  - Alignment audit validates existence of every image, 1:1 correspondence with label files (distinguishing intentional 0-byte negative frames from missing labels), validates class IDs against `dataset.yaml` names, checks finite coordinates (`math.isfinite()`), and verifies all coordinates are strictly within $[0.0, 1.0]$.
+  - Alignment audit validates existence of every image, 1:1 correspondence with label files (distinguishing intentional 0-byte negative frames from missing labels), validates class IDs against `dataset.yaml` names, checks finite coordinates (`math.isfinite()`), and verifies that bounding box geometric extents ($x_c \pm w/2, y_c \pm h/2$) strictly reside within $[0.0, 1.0]$.
+  - Strict match grouping policy guarantees zero match-level leakage: rejects incomplete or entirely missing match metadata unless `--allow-missing-game-id` is explicitly passed.
   - Reverse directory check detects deleted/orphaned images when labels exist on disk.
   - Compatibility note: Ultralytics YOLO requires `/images/` $\to$ `/labels/` path substitution when training from text manifests. For datasets without an `/images/` path token (such as SoccerNet's `img1/`), directory mode (`copy`, `symlink`, `hardlink`) provides standard native compatibility.
 

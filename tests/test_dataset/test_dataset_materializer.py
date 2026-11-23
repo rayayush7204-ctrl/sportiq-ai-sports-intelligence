@@ -339,3 +339,79 @@ def test_verify_dataset_detects_broken_manifest_mapping(synthetic_mot_sequence: 
     rep_after = DatasetMaterializer.verify_dataset_alignment(yaml_path)
     assert rep_after.is_aligned is False
     assert len(rep_after.missing_labels) >= 1
+
+
+@pytest.mark.parametrize(
+    "corrupt_content,error_match",
+    [
+        ("0 0.100000 0.500000 0.400000 0.200000\n", "left canvas boundary"),
+        ("0 0.900000 0.500000 0.400000 0.200000\n", "right canvas boundary"),
+        ("0 0.500000 0.050000 0.200000 0.200000\n", "top canvas boundary"),
+        ("0 0.500000 0.950000 0.200000 0.200000\n", "bottom canvas boundary"),
+    ],
+)
+def test_verify_dataset_geometric_bbox_boundaries_rejected(
+    synthetic_mot_sequence: Path, tmp_path: Path, corrupt_content: str, error_match: str
+) -> None:
+    """Test verification rejects boxes extending beyond left, right, top, or bottom edges."""
+    seq = load_sequence(synthetic_mot_sequence)
+    sequences = {seq.name: seq}
+
+    converter = YOLOConverter(taxonomy=ClassTaxonomyType.FOUR_CLASS)
+    converter.convert_sequence(seq, output_dir=tmp_path / "yolo")
+    labels_dir = tmp_path / "yolo" / "labels"
+
+    splitter = DatasetSplitter(random_seed=42)
+    split = splitter.split_sequences([seq.name], train_ratio=1.0, val_ratio=0.0, test_ratio=0.0)
+
+    mat_dir = tmp_path / f"mat_geom_{abs(hash(corrupt_content)) % 10000}"
+    DatasetMaterializer.materialize(
+        split=split,
+        sequences=sequences,
+        labels_base_dir=labels_dir,
+        output_dir=mat_dir,
+        mode="copy",
+    )
+    yaml_path = mat_dir / "dataset.yaml"
+
+    # Inject geometric boundary violation
+    lbl = mat_dir / "labels" / "train" / f"{seq.name}_000001.txt"
+    lbl.write_text(corrupt_content, encoding="utf-8")
+
+    rep = DatasetMaterializer.verify_dataset_alignment(yaml_path)
+    assert rep.is_aligned is False
+    assert len(rep.corrupted_labels) == 1
+    assert error_match in rep.corrupted_labels[0]
+
+
+def test_verify_dataset_geometric_bbox_within_canvas_accepted(
+    synthetic_mot_sequence: Path, tmp_path: Path
+) -> None:
+    """Test verification accepts boxes fully within canvas boundaries."""
+    seq = load_sequence(synthetic_mot_sequence)
+    sequences = {seq.name: seq}
+
+    converter = YOLOConverter(taxonomy=ClassTaxonomyType.FOUR_CLASS)
+    converter.convert_sequence(seq, output_dir=tmp_path / "yolo")
+    labels_dir = tmp_path / "yolo" / "labels"
+
+    splitter = DatasetSplitter(random_seed=42)
+    split = splitter.split_sequences([seq.name], train_ratio=1.0, val_ratio=0.0, test_ratio=0.0)
+
+    mat_dir = tmp_path / "mat_geom_valid"
+    DatasetMaterializer.materialize(
+        split=split,
+        sequences=sequences,
+        labels_base_dir=labels_dir,
+        output_dir=mat_dir,
+        mode="copy",
+    )
+    yaml_path = mat_dir / "dataset.yaml"
+
+    # Box entirely within canvas: xc=0.5, yc=0.5, w=0.2, h=0.2 -> bounds [0.4, 0.4, 0.6, 0.6]
+    lbl = mat_dir / "labels" / "train" / f"{seq.name}_000001.txt"
+    lbl.write_text("0 0.500000 0.500000 0.200000 0.200000\n", encoding="utf-8")
+
+    rep = DatasetMaterializer.verify_dataset_alignment(yaml_path)
+    assert rep.is_aligned is True
+    assert len(rep.corrupted_labels) == 0

@@ -231,3 +231,156 @@ def test_cli_materialize_dataset_allow_missing_game_id(
     data = json.loads(captured.out)
     assert data["status"] == "materialized"
     assert (mat_out / "dataset.yaml").exists()
+
+
+def test_cli_split_dataset_all_missing_game_id_fails(
+    synthetic_multi_sequences: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """Test CLI split-dataset rejects when ALL sequences lack game_id."""
+    for seq_dir in synthetic_multi_sequences.iterdir():
+        if seq_dir.is_dir() and (seq_dir / "gameinfo.ini").exists():
+            (seq_dir / "gameinfo.ini").unlink()
+
+    ret = main(["split-dataset", str(synthetic_multi_sequences)])
+    assert ret == 1
+    captured = capsys.readouterr()
+    assert "Incomplete match metadata: 6 sequence(s) missing game_id" in captured.err
+
+
+def test_cli_split_dataset_all_missing_game_id_allow_missing(
+    synthetic_multi_sequences: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """Test CLI split-dataset succeeds when all sequences lack game_id if --allow-missing-game-id is passed."""
+    for seq_dir in synthetic_multi_sequences.iterdir():
+        if seq_dir.is_dir() and (seq_dir / "gameinfo.ini").exists():
+            (seq_dir / "gameinfo.ini").unlink()
+
+    ret = main([
+        "split-dataset",
+        str(synthetic_multi_sequences),
+        "--allow-missing-game-id",
+        "--json",
+    ])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "Incomplete match metadata: 6 sequence(s) missing game_id" in captured.err
+    assert "Explicitly downgrading to sequence-level splitting" in captured.err
+    data = json.loads(captured.out)
+    assert data["total_count"] == 6
+
+
+def test_cli_materialize_dataset_all_missing_game_id_fails(
+    synthetic_multi_sequences: Path, tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """Test CLI materialize-dataset rejects when ALL sequences lack game_id."""
+    yolo_labels = tmp_path / "multi_labels_all_miss"
+    for seq_dir in sorted(synthetic_multi_sequences.iterdir()):
+        if seq_dir.is_dir() and (seq_dir / "seqinfo.ini").exists():
+            main([
+                "convert-dataset",
+                str(seq_dir),
+                "--output-dir", str(yolo_labels),
+                "--json",
+            ])
+            capsys.readouterr()
+
+    for seq_dir in synthetic_multi_sequences.iterdir():
+        if seq_dir.is_dir() and (seq_dir / "gameinfo.ini").exists():
+            (seq_dir / "gameinfo.ini").unlink()
+
+    mat_out = tmp_path / "mat_all_miss_fail"
+    ret = main([
+        "materialize-dataset",
+        str(synthetic_multi_sequences),
+        "--labels-dir", str(yolo_labels / "labels"),
+        "--output-dir", str(mat_out),
+    ])
+    assert ret == 1
+    captured = capsys.readouterr()
+    assert "Incomplete match metadata: 6 sequence(s) missing game_id" in captured.err
+
+
+def test_cli_materialize_dataset_all_missing_game_id_allow_missing(
+    synthetic_multi_sequences: Path, tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """Test CLI materialize-dataset succeeds when all lack game_id if --allow-missing-game-id is passed."""
+    yolo_labels = tmp_path / "multi_labels_all_allow"
+    for seq_dir in sorted(synthetic_multi_sequences.iterdir()):
+        if seq_dir.is_dir() and (seq_dir / "seqinfo.ini").exists():
+            main([
+                "convert-dataset",
+                str(seq_dir),
+                "--output-dir", str(yolo_labels),
+                "--json",
+            ])
+            capsys.readouterr()
+
+    for seq_dir in synthetic_multi_sequences.iterdir():
+        if seq_dir.is_dir() and (seq_dir / "gameinfo.ini").exists():
+            (seq_dir / "gameinfo.ini").unlink()
+
+    mat_out = tmp_path / "mat_all_miss_ok"
+    ret = main([
+        "materialize-dataset",
+        str(synthetic_multi_sequences),
+        "--labels-dir", str(yolo_labels / "labels"),
+        "--output-dir", str(mat_out),
+        "--allow-missing-game-id",
+        "--json",
+    ])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "Incomplete match metadata: 6 sequence(s) missing game_id" in captured.err
+    data = json.loads(captured.out)
+    assert data["status"] == "materialized"
+    assert (mat_out / "dataset.yaml").exists()
+
+
+def test_cli_split_dataset_single_sequence_no_gameinfo(
+    synthetic_mot_sequence: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """Test CLI split-dataset rejects a single sequence missing gameinfo.ini unless permitted."""
+    gameinfo = synthetic_mot_sequence / "gameinfo.ini"
+    if gameinfo.exists():
+        gameinfo.unlink()
+
+    ret_fail = main(["split-dataset", str(synthetic_mot_sequence)])
+    assert ret_fail == 1
+    captured_fail = capsys.readouterr()
+    assert "Incomplete match metadata" in captured_fail.err
+    assert synthetic_mot_sequence.name in captured_fail.err
+
+    ret_ok = main(["split-dataset", str(synthetic_mot_sequence), "--allow-missing-game-id", "--json"])
+    assert ret_ok == 0
+    captured_ok = capsys.readouterr()
+    data = json.loads(captured_ok.out)
+    assert data["total_count"] == 1
+
+
+def test_cli_split_dataset_complete_match_metadata_grouped(
+    synthetic_multi_sequences: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """Test CLI split-dataset keeps all sequences from the same match together without leakage."""
+    ret = main([
+        "split-dataset",
+        str(synthetic_multi_sequences),
+        "--train-ratio", "0.5",
+        "--val-ratio", "0.5",
+        "--test-ratio", "0.0",
+        "--seed", "42",
+        "--json",
+    ])
+    assert ret == 0
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+
+    train_set = set(data["train_sequences"])
+    val_set = set(data["val_sequences"])
+
+    # MATCH-01 sequences must all be in the same split
+    match_01_seqs = {"SNMOT-001", "SNMOT-002", "SNMOT-003"}
+    assert match_01_seqs.issubset(train_set) or match_01_seqs.issubset(val_set)
+
+    # MATCH-02 sequences must all be in the same split
+    match_02_seqs = {"SNMOT-004", "SNMOT-005", "SNMOT-006"}
+    assert match_02_seqs.issubset(train_set) or match_02_seqs.issubset(val_set)

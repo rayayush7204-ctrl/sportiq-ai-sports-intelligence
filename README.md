@@ -27,9 +27,10 @@ Dataset Engineering & MOT/YOLO Converter (sportiq.dataset) ◄ [PHASE 2 COMPLETE
     │   └── Annotation visualization and empirical dataset analytics
     │
     ▼
-Object Detection (YOLO / PyTorch)                     ◄ [PHASE 3 - NEXT]
-    │   ├── Player / person detection baseline
-    │   └── Football ball detection
+Object Detection (YOLO / PyTorch)                     ◄ [PHASE 3 ACTIVE - STEP 1 COMPLETE]
+    │   ├── Pretrained YOLO11n COCO baseline (GPU FP16)
+    │   ├── Structured predictions & streaming JSONL export
+    │   └── Detection visualizer with category overlays
     │
     ▼
 Multi-Object Tracking (ByteTrack / BoT-SORT)
@@ -52,12 +53,12 @@ Multi-Object Tracking (ByteTrack / BoT-SORT)
 | **Language** | Python 3.11.9 (64-bit) | Active |
 | **Deep Learning** | PyTorch 2.15.0+cu132, Torchvision 0.29.2+cu132 | Active (CUDA 13.2, RTX 3050 Laptop GPU) |
 | **Dataset Engineering** | SoccerNet MOT parser, YOLO converter, PyYAML | Active (Phase 2) |
-| **Object Detection** | Ultralytics YOLO (8.4.216) | Installed (Phase 3) |
+| **Object Detection** | Ultralytics YOLO (8.4.216) | Active (Phase 3 Baseline) |
 | **Video Processing** | OpenCV (4.14.0) | Active |
 | **Multi-Object Tracking** | ByteTrack, BoT-SORT | Planned (Phase 4) |
 | **Data & Scientific** | NumPy (2.4.6), Pandas (2.3.3), Scipy (1.17.1) | Installed |
 | **Machine Learning** | scikit-learn (1.9.1) | Installed |
-| **Testing** | pytest (9.2.0) | Active (90 passing tests) |
+| **Testing** | pytest (9.2.0) | Active (104 passing tests) |
 | **API & Serving** | FastAPI, Uvicorn | Planned (Phase 6) |
 
 ## Repository Layout
@@ -92,6 +93,10 @@ sportiq-ai-sports-intelligence/
 │   │   ├── visualizer.py           # Ground-truth bbox rendering on frames
 │   │   └── downloader.py           # Remote HF inventory inspection helper
 │   ├── detection/       # Object detection modules (Phase 3)
+│   │   ├── config.py       # DetectorConfig (device, imgsz, conf, half)
+│   │   ├── prediction.py   # BoundingBox, Detection, FrameDetections
+│   │   ├── detector.py     # YOLODetector lazy loading & inference
+│   │   └── visualizer.py   # DetectionVisualizer overlay renderer
 │   ├── tracking/        # Multi-object tracking (Phase 4)
 │   ├── analytics/       # Possession, team clustering, heatmaps
 │   ├── visualization/   # Video and pitch renderers
@@ -209,8 +214,18 @@ Verify every referenced image exists, corresponds to a valid label, and has vali
 sportiq verify-dataset data/processed/yolo_dataset/dataset.yaml
 ```
 
+#### Run Pretrained YOLO11n Object Detection
+Run inference on single frames or extracted frame directories:
+```powershell
+# Run inference on frame directory and export predictions
+sportiq detect-frames data/processed/sample/frames --output-jsonl data/processed/predictions.jsonl --visualize data/processed/vis_frames
+
+# Run inference on a single image with JSON summary
+sportiq detect-frames data/processed/sample/frames/frame_000000.jpg --json
+```
+
 ### 5. Running Automated Tests
-Run the complete automated test suite (67 unit and integration tests):
+Run the complete automated test suite (104 unit and integration tests):
 ```powershell
 pytest -v
 ```
@@ -219,8 +234,8 @@ pytest -v
 
 - [x] **Day 1: Environment & GPU verification** (Python 3.11, PyTorch 2.15+cu132, RTX 3050)
 - [x] **Day 2: Video inspection and frame extraction** (`sportiq.video`, CLI, JSONL manifest, tests)
-- [x] **Day 3: Dataset engineering & MOT/YOLO pipeline** (`sportiq.dataset`, 4-class taxonomy, MOT20 parser, validator, deterministic splitter, visualizer, 67 tests)
-- [ ] **Day 4: Pretrained player & ball detector baseline** (YOLOv8 / YOLO11 detection, evaluation metrics)
+- [x] **Day 3: Dataset engineering & MOT/YOLO pipeline** (`sportiq.dataset`, 4-class taxonomy, MOT20 parser, validator, deterministic splitter, visualizer, materializer, 90 tests)
+- [x] **Day 4: Pretrained detector baseline** (Phase 3 Step 1: `sportiq.detection`, YOLO11n, GPU FP16, JSONL prediction export, 104 tests)
 - [ ] **Day 5: Multi-object tracking (ByteTrack)** (track association across frames, ID retention)
 - [ ] **Day 6: BoT-SORT comparison and team clustering** (jersey appearance features)
 - [ ] **Day 7: Ball association, possession estimation, and heatmaps**

@@ -28,6 +28,13 @@ from sportiq.dataset.dataset_splitter import DatasetSplitter
 from sportiq.dataset.statistics import DatasetStatisticsReporter
 from sportiq.dataset.visualizer import visualize_sequence_frame
 from sportiq.dataset.yolo_converter import YOLOConverter
+from sportiq.detection import (
+    DetectionError,
+    DetectorConfig,
+    DetectionVisualizer,
+    FrameDetections,
+    YOLODetector,
+)
 from sportiq.video.frame_extractor import FrameExtractor
 from sportiq.video.reader import InvalidVideoError, VideoReader
 
@@ -567,6 +574,123 @@ def visualize_annotations_command(args: argparse.Namespace) -> int:
         return 1
 
 
+def detect_frames_command(args: argparse.Namespace) -> int:
+    """Run object detection on an image or directory of extracted video frames."""
+    input_path = Path(args.input_path).resolve()
+    if not input_path.exists():
+        print(f"Error: Input path not found: {input_path}", file=sys.stderr)
+        return 1
+
+    model_path = args.model
+    if not model_path:
+        default_local = Path("models/weights/yolo11n.pt").resolve()
+        model_path = str(default_local) if default_local.exists() else "yolo11n.pt"
+
+    device = args.device
+    if not device:
+        import torch
+
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+    config = DetectorConfig(
+        model_path=model_path,
+        device=device,
+        imgsz=args.imgsz,
+        conf=args.conf,
+        half=getattr(args, "half", True),
+    )
+
+    try:
+        detector = YOLODetector(config=config)
+
+        if input_path.is_file():
+            res = detector.predict_image(input_path)
+            results = [res]
+            if args.output_jsonl:
+                res.append_to_jsonl(args.output_jsonl)
+
+            if args.visualize:
+                vis_target = Path(args.visualize).resolve()
+                if vis_target.is_dir() or str(args.visualize).endswith(("/", "\\")):
+                    vis_target.mkdir(parents=True, exist_ok=True)
+                    vis_file = vis_target / f"pred_{input_path.name}"
+                else:
+                    vis_file = vis_target
+                DetectionVisualizer.visualize_and_save(input_path, res, vis_file)
+
+        elif input_path.is_dir():
+            results = detector.predict_frames(
+                frames_dir=input_path,
+                manifest_path=args.manifest,
+                output_jsonl=args.output_jsonl,
+            )
+
+            if args.visualize:
+                vis_dir = Path(args.visualize).resolve()
+                vis_dir.mkdir(parents=True, exist_ok=True)
+                for r in results:
+                    src_file = input_path / Path(r.source).name
+                    if src_file.is_file():
+                        DetectionVisualizer.visualize_and_save(
+                            src_file, r, vis_dir / f"pred_{src_file.name}"
+                        )
+        else:
+            print(f"Error: Unsupported input path type: {input_path}", file=sys.stderr)
+            return 1
+
+        total_frames = len(results)
+        total_detections = sum(r.total_detections for r in results)
+        total_time_ms = sum(r.inference_time_ms for r in results)
+        avg_fps = (total_frames / (total_time_ms / 1000.0)) if total_time_ms > 0 else 0.0
+
+        all_class_counts: Dict[str, int] = {}
+        for r in results:
+            for cname, count in r.class_counts.items():
+                all_class_counts[cname] = all_class_counts.get(cname, 0) + count
+
+        summary_dict = {
+            "input_path": str(input_path),
+            "model": Path(model_path).name,
+            "device": device,
+            "total_frames_processed": total_frames,
+            "total_detections": total_detections,
+            "class_counts": all_class_counts,
+            "total_inference_time_ms": round(total_time_ms, 2),
+            "average_fps": round(avg_fps, 1),
+            "output_jsonl": str(Path(args.output_jsonl).resolve()) if args.output_jsonl else None,
+            "visualize_dir": str(Path(args.visualize).resolve()) if args.visualize else None,
+        }
+
+        if getattr(args, "json", False):
+            print(json.dumps(summary_dict, indent=2))
+        else:
+            print("=" * 60)
+            print("SportIQ Object Detection Inference Complete")
+            print("=" * 60)
+            print(f"Input Target:           {input_path}")
+            print(f"Model:                  {Path(model_path).name}")
+            print(f"Device:                 {device} (FP16: {config.half})")
+            print(f"Frames Processed:       {total_frames}")
+            print(f"Total Detections:       {total_detections}")
+            print(f"Class Distribution:     {all_class_counts}")
+            latency_ms = (total_time_ms / total_frames) if total_frames > 0 else 0.0
+            print(f"Mean Latency:           {latency_ms:.1f}ms / frame (~{avg_fps:.1f} FPS)")
+            if args.output_jsonl:
+                print(f"Predictions JSONL:      {args.output_jsonl}")
+            if args.visualize:
+                print(f"Visualized Outputs:     {args.visualize}")
+            print("=" * 60)
+        return 0
+
+    except (DetectionError, FileNotFoundError, NotADirectoryError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        logger.exception("Unexpected error during detection: %s", e)
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Construct command-line parser for sportiq."""
     parser = argparse.ArgumentParser(
@@ -902,6 +1026,72 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output result in JSON format",
     )
     vis_parser.set_defaults(func=visualize_annotations_command)
+
+    # Command: detect-frames
+    detect_parser = subparsers.add_parser(
+        "detect-frames",
+        help="Run YOLO object detection inference on an image or extracted-frames directory",
+    )
+    detect_parser.add_argument(
+        "input_path",
+        type=str,
+        help="Path to an input image or directory of extracted frames",
+    )
+    detect_parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Model path or Ultralytics asset name (default: models/weights/yolo11n.pt or yolo11n.pt)",
+    )
+    detect_parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Target inference device (default: cuda:0 if available else cpu)",
+    )
+    detect_parser.add_argument(
+        "--imgsz",
+        type=int,
+        default=640,
+        help="Inference image resolution (default: 640)",
+    )
+    detect_parser.add_argument(
+        "--conf",
+        type=float,
+        default=0.25,
+        help="Confidence detection threshold (default: 0.25)",
+    )
+    detect_parser.add_argument(
+        "--no-half",
+        dest="half",
+        action="store_false",
+        help="Disable FP16 half-precision inference on CUDA",
+    )
+    detect_parser.set_defaults(half=True)
+    detect_parser.add_argument(
+        "--manifest",
+        type=str,
+        default=None,
+        help="Path to frames.jsonl manifest to preserve timestamps and original frame indices",
+    )
+    detect_parser.add_argument(
+        "--output-jsonl",
+        type=str,
+        default=None,
+        help="Destination path to export machine-readable predictions as JSONL",
+    )
+    detect_parser.add_argument(
+        "--visualize",
+        type=str,
+        default=None,
+        help="Output file or directory to save annotated visual detection images",
+    )
+    detect_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output summary in JSON format",
+    )
+    detect_parser.set_defaults(func=detect_frames_command)
 
     return parser
 

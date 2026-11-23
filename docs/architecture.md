@@ -7,7 +7,7 @@ Input Video File (.mp4, .mov, .avi)
          │
          ▼
 ┌────────────────────────────────────────────────────────┐
-│ Ingestion Layer (sportiq.video)                        │
+│ Ingestion Layer (sportiq.video) — [Phase 1]            │
 │ ────────────────────────────────────────────────────── │
 │ - VideoReader: OpenCV sequential decoder               │
 │ - Metadata extraction: codec, resolution, fps, frames  │
@@ -17,16 +17,27 @@ Input Video File (.mp4, .mov, .avi)
          │
          ▼
 ┌────────────────────────────────────────────────────────┐
-│ Detection Layer (sportiq.detection) — [Phase 2]        │
+│ Dataset Engineering (sportiq.dataset) — [Phase 2]      │
 │ ────────────────────────────────────────────────────── │
-│ - Player detector: YOLO person category baseline       │
-│ - Ball detector: specialized football detector         │
-│ - Output: BoundingBox2D(x1, y1, x2, y2, conf, class_id)│
+│ - SoccerNet MOT20 ground-truth parser                  │
+│ - Normalized YOLO converter & 4-class taxonomy         │
+│ - Largest Remainder match-level dataset splitter       │
+│ - DatasetMaterializer & 1:1 alignment verifier         │
 └────────────────────────────────────────────────────────┘
          │
          ▼
 ┌────────────────────────────────────────────────────────┐
-│ Tracking Layer (sportiq.tracking) — [Phase 3]          │
+│ Detection Layer (sportiq.detection) — [Phase 3]        │
+│ ────────────────────────────────────────────────────── │
+│ - Pretrained YOLO11n baseline (COCO person, ball)      │
+│ - Lazy model loading, FP16 CUDA GPU 0 acceleration     │
+│ - BoundingBox, Detection, FrameDetections containers   │
+│ - Structured JSONL predictions & visual overlay        │
+└────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌────────────────────────────────────────────────────────┐
+│ Tracking Layer (sportiq.tracking) — [Phase 4]          │
 │ ────────────────────────────────────────────────────── │
 │ - ByteTrack / BoT-SORT multi-object trackers           │
 │ - Trajectory buffer & track ID assignment              │
@@ -35,24 +46,16 @@ Input Video File (.mp4, .mov, .avi)
          │
          ▼
 ┌────────────────────────────────────────────────────────┐
-│ Analytics Layer (sportiq.analytics) — [Phase 4]        │
+│ Analytics Layer (sportiq.analytics) — [Phase 5]        │
 │ ────────────────────────────────────────────────────── │
 │ - Team classifier: Jersey colour clustering (k-means)  │
 │ - Ball possession & player-ball proximity model        │
-│ - Player speed, distance, and 2D spatial heatmaps      │
+│ - 2D pitch homography transformation & heatmaps        │
 └────────────────────────────────────────────────────────┘
          │
          ▼
 ┌────────────────────────────────────────────────────────┐
-│ Visualization & Pitch Mapping (sportiq.visualization)  │
-│ ────────────────────────────────────────────────────── │
-│ - Video overlay annotator (boxes, IDs, trajectories)   │
-│ - 2D pitch homography transformation                   │
-└────────────────────────────────────────────────────────┘
-         │
-         ▼
-┌────────────────────────────────────────────────────────┐
-│ Serving Layer (sportiq.api) — [Phase 5]                │
+│ Serving Layer (sportiq.api) — [Phase 6]                │
 │ ────────────────────────────────────────────────────── │
 │ - FastAPI endpoints for asynchronous job execution     │
 │ - React dashboard for interactive match analytics      │
@@ -150,7 +153,31 @@ Input Video File (.mp4, .mov, .avi)
 
 ---
 
-### Phase 1 & 2 CLI (`sportiq.cli`)
+### Phase 3: Object Detection Baseline (`sportiq.detection`)
+
+#### 1. `sportiq.detection.config`
+- **`DetectorConfig`**: Dataclass controlling model weights path (`yolo11n.pt`), target device (`cuda:0` / `cpu`), inference image size (`imgsz=640`), confidence threshold (`conf=0.25`), IoU threshold (`iou=0.45`), FP16 half precision (`half=True`), and batch size (`1`). Validates parameter boundaries.
+
+#### 2. `sportiq.detection.prediction`
+- **`BoundingBox`**: Pixel-coordinate bounding box container ($x_1, y_1, x_2, y_2$) with derived dimensions ($w, h$, centers) and normalized YOLO coordinate export.
+- **`Detection`**: Individual object prediction instance with bounding box, confidence score, integer class ID, and class name.
+- **`FrameDetections`**: Complete frame detection record capturing source image path, frame index, millisecond timestamp, image dimensions, inference latency (ms), model identifier, device, and class frequency distribution. Supports single-line JSON serialization and streaming `.append_to_jsonl()`.
+
+#### 3. `sportiq.detection.detector`
+- **`YOLODetector`**:
+  - Lazy model initialization: weights are loaded only on first inference or explicit `load_model()`.
+  - Explicit device validation: verifies CUDA availability when `cuda` is requested, preventing silent fallback to CPU.
+  - FP16 half-precision execution enabled on CUDA GPU 0.
+  - Exposes `class_names` mapping directly from model.
+  - `predict_image()`: Processes single image or numpy BGR array.
+  - `predict_frames()`: Processes frame directories, automatically resolving `frames.jsonl` manifests to preserve original timestamps and frame indices.
+
+#### 4. `sportiq.detection.visualizer`
+- **`DetectionVisualizer`**: Renders detected bounding boxes, confidence tags, and class badges onto frames with category color coding and summary overlay. Exports annotated frames to disk.
+
+---
+
+### Phase 1, 2 & 3 CLI (`sportiq.cli`)
 - Unified entry point `sportiq`:
   - `check-env`: inspects environment and GPU acceleration.
   - `inspect-video`: extracts video stream metadata.
@@ -161,6 +188,7 @@ Input Video File (.mp4, .mov, .avi)
   - `visualize-annotations`: renders annotated frames with ground-truth boxes and track IDs.
   - `materialize-dataset`: builds zero-duplication YOLO datasets with split manifests or physical layouts.
   - `verify-dataset`: audits image-to-label alignment, missing frames, and coordinate validity.
+  - `detect-frames`: runs object detection inference on images or extracted-frame directories, exporting JSONL predictions and visual overlays.
 
 ## Engineering Rules
 
